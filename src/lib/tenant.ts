@@ -1,6 +1,8 @@
 import { db } from "@/db/client";
 import { tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { auth } from "@clerk/nextjs/server";
+import { getTenantIdFromOrgSlug } from "@/lib/clerkOrganization";
 
 interface TenantMetadata {
   contactName?: string;
@@ -34,21 +36,39 @@ export async function getTenantLogo(subdomain: string): Promise<string | null> {
 
 export async function requireTenantIdFromRequest(req: Request): Promise<number> {
   const subdomain = req.headers.get("x-tenant-subdomain");
-  
-  // Handle development case where subdomain might be null (localhost)
+
+  if (subdomain) {
+    const tenant = await getTenantBySubdomain(subdomain);
+    if (tenant?.id) return tenant.id as number;
+  }
+
+  // A newly created Clerk organization may not have a matching tenant row yet.
+  // Resolve it from the authenticated organization only when it matches the
+  // requested tenant hostname.
+  const authResult = await auth();
+  if (
+    authResult.orgSlug &&
+    authResult.orgId &&
+    (!subdomain || authResult.orgSlug === subdomain)
+  ) {
+    const tenantId = await getTenantIdFromOrgSlug(
+      authResult.orgSlug,
+      authResult.orgId,
+      authResult.orgSlug
+    );
+    if (tenantId) return tenantId;
+  }
+
+  // Handle development requests made directly against localhost.
   if (!subdomain) {
-    // In development, try to use a default tenant or create one
-    // For now, let's try to find any tenant or use a default
     const allTenants = await db.select().from(tenants).limit(1);
     if (allTenants.length > 0) {
       return allTenants[0].id as number;
     }
     throw new Error("No tenant found and no subdomain provided");
   }
-  
-  const t = await getTenantBySubdomain(subdomain);
-  if (!t || !t.id) throw new Error("Tenant not found");
-  return t.id as number;
+
+  throw new Error("Tenant not found");
 }
 
 

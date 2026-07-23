@@ -1,9 +1,20 @@
 import { SignIn } from "@clerk/nextjs";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export default function LoginPage() {
+export default async function LoginPage({
+  params,
+}: {
+  params: Promise<{ "sign-in"?: string[] }>;
+}) {
+  const signInPath = (await params)["sign-in"];
+
+  if (signInPath?.[0] === "redirect") {
+    redirect("/auth-redirect");
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
@@ -46,9 +57,9 @@ export default function LoginPage() {
             routing="path"
             path="/login"
             signUpUrl="/signup"
-            afterSignInUrl="/login/redirect"
-            redirectUrl="/login/redirect"
-            forceRedirectUrl="/login/redirect"
+            afterSignInUrl="/auth-redirect"
+            redirectUrl="/auth-redirect"
+            forceRedirectUrl="/auth-redirect"
           />
         </div>
       </div>
