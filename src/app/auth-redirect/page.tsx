@@ -62,8 +62,8 @@ export default function LoginRedirectPage() {
       
       // Determine dashboard path based on role
       // Admin (teamleader) → /team-leader
-      // Member (salesExecutive/salesperson) → /dashboard
-      const path = isAdmin ? "/team-leader" : "/dashboard";
+      // Member (salesExecutive/salesperson) → /team-member
+      const path = isAdmin ? "/team-leader" : "/team-member";
       
       // Get organization slug for tenant subdomain
       const organizationSlug = organization.slug;

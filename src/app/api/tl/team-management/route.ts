@@ -184,7 +184,7 @@ export async function GET(request: NextRequest) {
 
     if (process.env.NODE_ENV !== "production") {
       console.log("Found users with filtered roles:", allUsers.length);
-      console.log("Users:", allUsers.map(u => ({ name: u.name, email: u.email, role: u.role })));
+      console.log("Users:", allUsers.map((u: any) => ({ name: u.name, email: u.email, role: u.role })));
     }
 
     // Get team assignments for this tenant - always filter by tenantId
@@ -203,9 +203,9 @@ export async function GET(request: NextRequest) {
     // Convert to format expected by client (using user IDs/codes)
     // We need to map user IDs to codes for the mapping
     const userCodeMap = new Map<number, string>();
-    allUsers.forEach(u => userCodeMap.set(u.id, u.code || u.email));
+    allUsers.forEach((u: any) => userCodeMap.set(u.id, u.code || u.email));
 
-    const teamAssignmentsList: TeamAssignment[] = assignments.map(a => ({
+    const teamAssignmentsList: TeamAssignment[] = assignments.map((a: any) => ({
       salespersonId: userCodeMap.get(a.salespersonId) || String(a.salespersonId),
       jlId: userCodeMap.get(a.jlId) || String(a.jlId),
       status: a.status,
@@ -266,7 +266,7 @@ export async function GET(request: NextRequest) {
       teamData = {
         allUsers: allUsers.filter((user: User) => 
           (user.code || user.email) === (currentUser.code || currentUser.email) || assignedSales.includes(user.code || user.email)
-        ).map(u => ({
+        ).map((u: any) => ({
           id: u.id,
           code: u.code,
           name: u.name,

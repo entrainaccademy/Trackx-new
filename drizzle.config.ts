@@ -3,10 +3,8 @@ import type { Config } from "drizzle-kit";
 
 // Normalize connection string and ensure SSL params are included for non-local connections
 function getConnectionUrl(): string {
-  const raw = process.env.PSQL || process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
-  if (!raw) {
-    throw new Error("Database URL not found. Set PSQL, DATABASE_URL, or NEON_DATABASE_URL");
-  }
+  const raw = process.env.PSQL || process.env.DATABASE_URL || process.env.NEON_DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/trackx";
+
   
   let url = raw.trim();
   // Handle values like: psql 'postgresql://user:pass@host/db?sslmode=require'

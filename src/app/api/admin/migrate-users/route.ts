@@ -226,7 +226,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Preview what would happen
-    const preview = usersWithoutTenant.map((user) => {
+    const preview = usersWithoutTenant.map((user: any) => {
       const userEmail = user.email?.toLowerCase() || "";
       const matchedTenant = userEmail ? tenantEmailMap.get(userEmail) : null;
 
@@ -255,8 +255,8 @@ export async function GET(request: NextRequest) {
       preview,
       summary: {
         totalUsersWithoutTenant: usersWithoutTenant.length,
-        willMatch: preview.filter((p) => p.willMatch).length,
-        willCreateDefaultTenant: preview.filter((p) => p.willCreateDefaultTenant).length,
+        willMatch: preview.filter((p: any) => p.willMatch).length,
+        willCreateDefaultTenant: preview.filter((p: any) => p.willCreateDefaultTenant).length,
       },
     });
   } catch (error: any) {

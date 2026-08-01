@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +29,7 @@ const EventItem = React.memo(({ event, userNames }: {
   userNames: Map<string, string> 
 }) => (
   <div className="flex items-start space-x-3 p-3 bg-slate-50 rounded-lg">
-    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>                                                                                                                                                                                                                                                                                                                                                 
     <div className="flex-1 min-w-0">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-slate-900">
@@ -182,6 +182,7 @@ export default function LeadModal({ lead, isOpen, onClose }: LeadModalProps) {
             <span>Lead Details</span>
             <Badge variant="outline">{lead.phone}</Badge>
           </DialogTitle>
+          <DialogDescription className="sr-only">View and edit lead details</DialogDescription>
         </DialogHeader>
 
         {loading ? (

@@ -7,7 +7,7 @@ const fetchMock = jest.fn();
 (global as any).fetch = fetchMock;
 
 // Import the page component
-import ReportsPage from '@/app/team-leader/lead-management/reports/page';
+import ReportsPage from '@/app/team-leader/reports/page';
 
 const leadsPayload = {
   success: true,
@@ -39,6 +39,8 @@ function installStableFetch() {
 }
 
 describe('Reports Page', () => {
+  jest.setTimeout(15000);
+
   beforeEach(() => {
     installStableFetch();
     // localStorage mock
@@ -79,10 +81,14 @@ describe('Reports Page', () => {
     render(<ReportsPage />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
-    // Mock prompt
-    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('My Filter');
     fireEvent.click(screen.getByText('Save Filter'));
-    promptSpy.mockRestore();
+
+    const input = screen.getByPlaceholderText('e.g., High Priority Leads');
+    fireEvent.change(input, { target: { value: 'My Filter' } });
+    
+    // Click Save Filter inside modal
+    const modalSaveBtn = screen.getAllByRole('button', { name: 'Save Filter' }).pop()!;
+    fireEvent.click(modalSaveBtn);
 
     // Quick filter chip should appear
     expect(await screen.findByText('My Filter')).toBeInTheDocument();

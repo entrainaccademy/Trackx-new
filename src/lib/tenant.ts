@@ -42,24 +42,34 @@ export async function requireTenantIdFromRequest(req: Request): Promise<number> 
     if (tenant?.id) return tenant.id as number;
   }
 
-  // A newly created Clerk organization may not have a matching tenant row yet.
-  // Resolve it from the authenticated organization only when it matches the
-  // requested tenant hostname.
-  const authResult = await auth();
-  if (
-    authResult.orgSlug &&
-    authResult.orgId &&
-    (!subdomain || authResult.orgSlug === subdomain)
-  ) {
+  // Check Clerk auth for org info
+  let authResult: any = null;
+  try {
+    authResult = await auth();
+  } catch {}
+
+  const targetSlug = subdomain || authResult?.orgSlug;
+  const orgId = authResult?.orgId || (subdomain ? `org_${subdomain}` : undefined);
+
+  if (targetSlug && orgId) {
     const tenantId = await getTenantIdFromOrgSlug(
-      authResult.orgSlug,
-      authResult.orgId,
-      authResult.orgSlug
+      targetSlug,
+      orgId,
+      authResult?.orgSlug || targetSlug
     );
     if (tenantId) return tenantId;
   }
 
-  // Handle development requests made directly against localhost.
+  if (subdomain) {
+    const tenantId = await getTenantIdFromOrgSlug(
+      subdomain,
+      `org_${subdomain}`,
+      subdomain
+    );
+    if (tenantId) return tenantId;
+  }
+
+  // Handle development requests made directly against localhost without subdomain.
   if (!subdomain) {
     const allTenants = await db.select().from(tenants).limit(1);
     if (allTenants.length > 0) {

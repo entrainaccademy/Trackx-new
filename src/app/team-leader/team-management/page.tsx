@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-// Clerk handles authentication automatically via cookies - no need for fetch
-import { Eye, EyeOff, Settings, Users, Plus, Edit, Trash2, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Eye, EyeOff, Settings, Users, Plus, Edit, Trash2, Search, Copy, KeyRound, Lock, ShieldCheck, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 interface User {
@@ -18,9 +17,13 @@ interface User {
   _id?: string;
   name: string;
   email: string;
+  phone?: string;
+  department?: string;
+  status?: string;
   role: string;
   assignedTo?: string;
   password?: string;
+  passwordSet?: boolean;
   target?: number;
 }
 
@@ -52,14 +55,32 @@ export default function TeamManagementPage() {
   const [showCredentials, setShowCredentials] = useState(false);
   const [credentials, setCredentials] = useState<User[]>([]);
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
+
+  // Add Member State
   const [showAddUser, setShowAddUser] = useState(false);
-  const [showEditUser, setShowEditUser] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
+    phone: "",
+    role: "sales",
+    department: "",
+    password: "",
+    confirmPassword: "",
+    status: "Active",
     target: 0
   });
+
+  // Edit Member State
+  const [showEditUser, setShowEditUser] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+
+  // Reset Password State
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetTargetUser, setResetTargetUser] = useState<User | null>(null);
+  const [resetPasswordVal, setResetPasswordVal] = useState("");
+  const [confirmResetPasswordVal, setConfirmResetPasswordVal] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [isUpdatingUser, setIsUpdatingUser] = useState(false);
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null);
@@ -73,11 +94,9 @@ export default function TeamManagementPage() {
 
   const fetchTeamData = async () => {
     try {
-      // API gets user from Clerk authentication - no need for userId parameter
       const response = await fetch(`/api/tl/team-management`);
       if (response.ok) {
         const data = await response.json();
-        // Ensure teamData is always an object with arrays, never null
         setTeamData(data.teamData || {
           allUsers: [],
           juniorLeaders: [],
@@ -86,7 +105,6 @@ export default function TeamManagementPage() {
       } else {
         const errorData = await response.json();
         console.error("Team data fetch error:", errorData);
-        // Set empty team data on error so UI can still render
         setTeamData({
           allUsers: [],
           juniorLeaders: [],
@@ -96,7 +114,6 @@ export default function TeamManagementPage() {
       }
     } catch (error) {
       console.error("Error fetching team data:", error);
-      // Set empty team data on error so UI can still render
       setTeamData({
         allUsers: [],
         juniorLeaders: [],
@@ -110,7 +127,6 @@ export default function TeamManagementPage() {
 
   const fetchCredentials = async () => {
     try {
-      // Clerk handles authentication via cookies automatically
       const response = await fetch("/api/users/credentials");
       if (response.ok) {
         const data = await response.json();
@@ -119,6 +135,12 @@ export default function TeamManagementPage() {
     } catch (error) {
       console.error("Error fetching credentials:", error);
     }
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard!`);
   };
 
   const togglePasswordVisibility = (userId: string) => {
@@ -135,14 +157,13 @@ export default function TeamManagementPage() {
     if (visiblePasswords.size === credentials.length) {
       setVisiblePasswords(new Set());
     } else {
-      setVisiblePasswords(new Set(credentials.map(user => user._id || user.code)));
+      setVisiblePasswords(new Set(credentials.map(user => user._id || String(user.id) || user.code)));
     }
   };
 
   const promoteToJL = async (salespersonCode: string) => {
     try {
       setPromotingUser(salespersonCode);
-      
       const response = await fetch("/api/tl/team-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -154,7 +175,7 @@ export default function TeamManagementPage() {
 
       if (response.ok) {
         toast.success("User promoted to Junior Leader successfully");
-        fetchTeamData(); // Refresh data
+        fetchTeamData();
       } else {
         const error = await response.json();
         toast.error(error.error || "Failed to promote user");
@@ -170,7 +191,6 @@ export default function TeamManagementPage() {
   const assignToJL = async (salespersonCode: string, jlCode: string) => {
     try {
       setAssigningUser(salespersonCode);
-      
       const response = await fetch("/api/tl/team-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -183,8 +203,7 @@ export default function TeamManagementPage() {
 
       if (response.ok) {
         toast.success("User assigned to Junior Leader successfully");
-        fetchTeamData(); // Refresh data
-        // Clear the selection for this specific salesperson
+        fetchTeamData();
         setJlSelections(prev => ({ ...prev, [salespersonCode]: "" }));
       } else {
         const error = await response.json();
@@ -201,7 +220,6 @@ export default function TeamManagementPage() {
   const unassignFromJL = async (salespersonCode: string) => {
     try {
       setUnassigningUser(salespersonCode);
-      
       const response = await fetch("/api/tl/team-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -213,8 +231,7 @@ export default function TeamManagementPage() {
 
       if (response.ok) {
         toast.success("User unassigned successfully");
-        fetchTeamData(); // Refresh data
-        // Clear the selection for this specific salesperson
+        fetchTeamData();
         setJlSelections(prev => ({ ...prev, [salespersonCode]: "" }));
       } else {
         const error = await response.json();
@@ -231,7 +248,6 @@ export default function TeamManagementPage() {
   const demoteToSales = async (jlCode: string) => {
     try {
       setDemotingUser(jlCode);
-      
       const response = await fetch("/api/tl/team-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -243,8 +259,8 @@ export default function TeamManagementPage() {
 
       if (response.ok) {
         toast.success("User demoted to sales successfully");
-        fetchTeamData(); // Refresh data
-        setShowDemoteConfirm(null); // Hide confirmation
+        fetchTeamData();
+        setShowDemoteConfirm(null);
       } else {
         const error = await response.json();
         toast.error(error.error || "Failed to demote user");
@@ -267,31 +283,44 @@ export default function TeamManagementPage() {
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (newUser.password !== newUser.confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    if (newUser.password.length < 6) {
+      toast.error("Password must be at least 6 characters long");
+      return;
+    }
+
     setIsAddingUser(true);
     try {
-      // Clerk handles authentication via cookies automatically
       const res = await fetch("/api/users", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newUser),
       });
 
       if (res.ok) {
         const result = await res.json();
-        toast.success(result.message || "Team member invited successfully!", {
-          duration: 6000, // Show for 6 seconds to read the message
-        });
-        
-        // Show additional info if invitation was sent
-        if (result.invitationId) {
-          console.log('Invitation details:', result.invitationDetails);
-          console.log('Troubleshooting steps:', result.troubleshooting);
-        }
-        
+        toast.success(result.message || "Team member created successfully with password!");
         setShowAddUser(false);
-        setNewUser({ name: "", email: "", target: 0 });
+        setNewUser({
+          name: "",
+          email: "",
+          phone: "",
+          role: "sales",
+          department: "",
+          password: "",
+          confirmPassword: "",
+          status: "Active",
+          target: 0
+        });
         fetchTeamData();
         fetchCredentials();
       } else {
@@ -311,12 +340,9 @@ export default function TeamManagementPage() {
 
     setIsUpdatingUser(true);
     try {
-      // Clerk handles authentication via cookies automatically
       const res = await fetch("/api/users", {
         method: "PUT",
-        headers: { 
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editingUser),
       });
 
@@ -337,12 +363,62 @@ export default function TeamManagementPage() {
     }
   };
 
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetTargetUser) return;
+
+    if (!resetPasswordVal || resetPasswordVal.length < 6) {
+      toast.error("Password must be at least 6 characters long");
+      return;
+    }
+
+    if (resetPasswordVal !== confirmResetPasswordVal) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      const res = await fetch("/api/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: resetTargetUser.id || resetTargetUser._id,
+          email: resetTargetUser.email,
+          newPassword: resetPasswordVal,
+        }),
+      });
+
+      if (res.ok) {
+        toast.success(`Password for ${resetTargetUser.name} updated successfully!`);
+        setShowResetPassword(false);
+        setResetTargetUser(null);
+        setResetPasswordVal("");
+        setConfirmResetPasswordVal("");
+        fetchCredentials();
+      } else {
+        const error = await res.json();
+        toast.error(error.error || "Failed to reset password");
+      }
+    } catch (error) {
+      toast.error("Failed to reset password");
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  const openResetPasswordModal = (user: User) => {
+    setResetTargetUser(user);
+    setResetPasswordVal("");
+    setConfirmResetPasswordVal("");
+    setShowResetPassword(true);
+  };
+
   const handleDeleteUser = async (userId: string) => {
     if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) return;
 
     setIsDeletingUser(userId);
     try {
-      // Clerk handles authentication via cookies automatically
       const res = await fetch(`/api/users?id=${userId}`, {
         method: "DELETE"
       });
@@ -376,7 +452,6 @@ export default function TeamManagementPage() {
     );
   }
 
-  // Initialize empty team data if null to allow UI to render
   const displayTeamData = teamData || {
     allUsers: [],
     juniorLeaders: [],
@@ -391,7 +466,7 @@ export default function TeamManagementPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Team Management</h1>
-              <p className="mt-1 text-sm text-slate-600">Manage your team hierarchy and role assignments</p>
+              <p className="mt-1 text-sm text-slate-600">Manage team members, admin-controlled credentials, and password resets</p>
             </div>
             <div className="flex items-center space-x-3">
               <Button
@@ -401,7 +476,7 @@ export default function TeamManagementPage() {
                 className="gap-2 border-slate-200 hover:bg-slate-50"
               >
                 <Settings className="w-4 h-4" />
-                View Credentials
+                Team Credentials
               </Button>
               <Button
                 onClick={() => setShowAddUser(true)}
@@ -466,8 +541,7 @@ export default function TeamManagementPage() {
                       </div>
                       <p className="text-sm text-slate-600 mb-2">{jl.email}</p>
                       <p className="text-sm text-slate-500 mb-3">Team Members: <span className="font-semibold">{jl.teamMembers.length}</span></p>
-                  
-                      {/* Demote to Sales Button */}
+
                       {showDemoteConfirm === jl.code ? (
                         <div className="space-y-2">
                           <p className="text-xs text-red-600 font-medium">Are you sure?</p>
@@ -479,21 +553,9 @@ export default function TeamManagementPage() {
                               size="sm"
                               className="flex-1"
                             >
-                              {demotingUser === jl.code ? (
-                                <span className="inline-flex items-center gap-2">
-                                  <span className="inline-block h-4 w-4 rounded-full border-2 border-white/80 border-t-transparent animate-spin" aria-hidden="true" />
-                                  Demoting...
-                                </span>
-                              ) : (
-                                "Yes, Demote"
-                              )}
+                              {demotingUser === jl.code ? "Demoting..." : "Yes, Demote"}
                             </Button>
-                            <Button
-                              onClick={cancelDemote}
-                              variant="outline"
-                              size="sm"
-                              className="flex-1"
-                            >
+                            <Button onClick={cancelDemote} variant="outline" size="sm" className="flex-1">
                               Cancel
                             </Button>
                           </div>
@@ -501,11 +563,10 @@ export default function TeamManagementPage() {
                       ) : (
                         <Button
                           onClick={() => confirmDemote(jl.code)}
-                          disabled={jl.teamMembers.length > 0}
-                          variant={jl.teamMembers.length > 0 ? "outline" : "destructive"}
+                          disabled={demotingUser === jl.code}
+                          variant="outline"
                           size="sm"
-                          className="w-full"
-                          title={jl.teamMembers.length > 0 ? "Cannot demote JL with team members" : "Demote to Sales"}
+                          className="w-full text-slate-700 hover:text-slate-900 border-slate-200"
                         >
                           Demote to Sales
                         </Button>
@@ -519,176 +580,146 @@ export default function TeamManagementPage() {
         </Card>
 
         {/* Sales Persons Section */}
-        <Card className="border border-slate-200/60 shadow-sm">
-          <CardHeader className="bg-slate-50/50 border-b border-slate-200/60">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg text-slate-900">Sales Persons</CardTitle>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input
-                    type="text"
-                    placeholder="Search by name, email, or code..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 w-64 h-9 border-slate-200"
-                  />
-                </div>
-                <div className="text-sm text-slate-600 font-medium">
-                  {displayTeamData.salesPersons.filter(sp => 
-                    sp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    sp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    sp.code.toLowerCase().includes(searchTerm.toLowerCase())
-                  ).length} of {displayTeamData.salesPersons.length} members
-                </div>
-              </div>
+        <Card className="mb-8 border border-slate-200/60 shadow-sm">
+          <CardHeader className="bg-slate-50/50 border-b border-slate-200/60 flex flex-row items-center justify-between">
+            <CardTitle className="text-lg text-slate-900">All Team Members</CardTitle>
+            <div className="w-64 relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Search member..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 h-9 text-sm"
+              />
             </div>
           </CardHeader>
           <CardContent className="p-0">
             {displayTeamData.salesPersons.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-slate-500 mb-4">No Sales Persons yet</p>
-                <Button
-                  onClick={() => setShowAddUser(true)}
-                  size="sm"
-                  className="gap-2 bg-primary hover:bg-primary/90"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Your First Team Member
-                </Button>
-              </div>
+              <p className="text-slate-500 text-center py-8">No team members found</p>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <THead>
-                    <TR>
-                      <TH>Name</TH>
-                      <TH>Email</TH>
-                      <TH>Target</TH>
-                      <TH>Assigned To</TH>
-                      <TH>Role Management</TH>
-                      <TH>Member Actions</TH>
+                    <TR className="border-b border-slate-200 bg-slate-50/50">
+                      <TH className="text-slate-700">Member</TH>
+                      <TH className="text-slate-700">Role</TH>
+                      <TH className="text-slate-700">Status</TH>
+                      <TH className="text-slate-700">Assigned To</TH>
+                      <TH className="text-slate-700 text-right">Actions</TH>
                     </TR>
                   </THead>
                   <TBody>
                     {displayTeamData.salesPersons
-                      .filter(sp => 
+                      .filter((sp) =>
                         sp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        sp.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        sp.code.toLowerCase().includes(searchTerm.toLowerCase())
+                        sp.email.toLowerCase().includes(searchTerm.toLowerCase())
                       )
                       .map((salesperson) => (
-                      <TR key={salesperson.code}>
+                      <TR key={salesperson.code} className="border-b border-slate-100 hover:bg-slate-50/50">
                         <TD>
-                          <div className="text-sm font-medium text-gray-900">{salesperson.name}</div>
-                        </TD>
-                        <TD>
-                          <div className="text-sm text-slate-900">{salesperson.email}</div>
-                        </TD>
-                        <TD>
-                          <div className="text-sm font-semibold text-slate-900">
-                            ₹{(salesperson.target || 0).toLocaleString()}
+                          <div>
+                            <div className="font-semibold text-slate-900">{salesperson.name}</div>
+                            <div className="text-xs text-slate-500">{salesperson.email}</div>
                           </div>
+                        </TD>
+                        <TD>
+                          <Badge variant="outline" className="capitalize">
+                            {salesperson.role || "sales"}
+                          </Badge>
+                        </TD>
+                        <TD>
+                          <Badge
+                            className={
+                              (salesperson.status || "Active").toLowerCase() === "active"
+                                ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-0"
+                                : "bg-slate-100 text-slate-800 hover:bg-slate-100 border-0"
+                            }
+                          >
+                            {salesperson.status || "Active"}
+                          </Badge>
                         </TD>
                         <TD>
                           {salesperson.assignedTo ? (
-                            <Badge variant="secondary">
-                              {displayTeamData.juniorLeaders.find(jl => jl.code === salesperson.assignedTo)?.name || salesperson.assignedTo}
-                            </Badge>
+                            <div className="flex items-center space-x-2">
+                              <Badge variant="secondary" className="bg-green-100 text-green-700">
+                                JL: {salesperson.assignedTo}
+                              </Badge>
+                              <Button
+                                onClick={() => unassignFromJL(salesperson.code)}
+                                disabled={unassigningUser === salesperson.code}
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs text-slate-500 hover:text-slate-700"
+                              >
+                                {unassigningUser === salesperson.code ? "Unassigning..." : "Unassign"}
+                              </Button>
+                            </div>
                           ) : (
-                            <Badge variant="outline">Unassigned</Badge>
+                            <div className="flex items-center space-x-2">
+                              <select
+                                className="text-sm border border-slate-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                                value={jlSelections[salesperson.code] || ""}
+                                onChange={(e) =>
+                                  setJlSelections((prev) => ({
+                                    ...prev,
+                                    [salesperson.code]: e.target.value,
+                                  }))
+                                }
+                              >
+                                <option value="">Select JL</option>
+                                {displayTeamData.juniorLeaders.map((jl) => (
+                                  <option key={jl.code} value={jl.code}>
+                                    {jl.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <Button
+                                onClick={() =>
+                                  assignToJL(salesperson.code, jlSelections[salesperson.code])
+                                }
+                                disabled={
+                                  !jlSelections[salesperson.code] ||
+                                  assigningUser === salesperson.code
+                                }
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs bg-white border-slate-200 hover:bg-slate-50"
+                              >
+                                {assigningUser === salesperson.code ? "Assigning..." : "Assign"}
+                              </Button>
+                            </div>
                           )}
                         </TD>
-                        <TD>
-                          <div className="flex items-center space-x-2 flex-wrap gap-2">
+                        <TD className="text-right">
+                          <div className="flex items-center justify-end space-x-1">
                             <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openResetPasswordModal(salesperson)}
+                              className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 h-8 px-2"
+                              title="Reset Password"
+                            >
+                              <KeyRound className="w-4 h-4 mr-1" />
+                              Reset Password
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => promoteToJL(salesperson.code)}
                               disabled={promotingUser === salesperson.code}
-                              size="sm"
-                              variant="outline"
-                              className="border-blue-200 text-blue-700 hover:bg-blue-50"
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8 px-2"
                             >
-                              {promotingUser === salesperson.code ? "Promoting..." : "Promote to JL"}
+                              {promotingUser === salesperson.code ? "Promoting..." : "Promote"}
                             </Button>
-                            
-                            {/* Assignment Controls */}
-                            {salesperson.assignedTo ? (
-                              // Currently assigned - show reassignment options
-                              <div className="flex items-center space-x-2">
-                                <span className="text-xs text-gray-500">Reassign to:</span>
-                                <select
-                                  value={jlSelections[salesperson.code] || ""}
-                                  onChange={(e) => setJlSelections(prev => ({ ...prev, [salesperson.code]: e.target.value }))}
-                                  className="w-32 h-8 text-xs px-2 py-1 border border-gray-300 rounded-md"
-                                >
-                                  <option value="">Select new JL</option>
-                                  {displayTeamData.juniorLeaders
-                                    ?.filter(jl => jl.code !== salesperson.assignedTo)
-                                    .map((jl) => (
-                                      <option key={jl.code} value={jl.code}>
-                                        {jl.name}
-                                      </option>
-                                    ))}
-                                </select>
-                                <Button
-                                  onClick={() => assignToJL(salesperson.code, jlSelections[salesperson.code] || "")}
-                                  disabled={!jlSelections[salesperson.code] || assigningUser === salesperson.code}
-                                  variant="default"
-                                  size="sm"
-                                >
-                                  {assigningUser === salesperson.code ? "Reassigning..." : "Reassign"}
-                                </Button>
-                                <Button
-                                  onClick={() => unassignFromJL(salesperson.code)}
-                                  disabled={unassigningUser === salesperson.code}
-                                  variant="destructive"
-                                  size="sm"
-                                >
-                                  {unassigningUser === salesperson.code ? "Unassigning..." : "Unassign"}
-                                </Button>
-                              </div>
-                            ) : (
-                              // Not assigned - show assignment options
-                              <div className="flex items-center space-x-2">
-                                <select
-                                  value={jlSelections[salesperson.code] || ""}
-                                  onChange={(e) => setJlSelections(prev => ({ ...prev, [salesperson.code]: e.target.value }))}
-                                  className="w-32 h-8 text-xs px-2 py-1 border border-gray-300 rounded-md"
-                                >
-                                  <option value="">Select JL</option>
-                                  {displayTeamData.juniorLeaders
-                                    ?.filter(jl => jl.code !== salesperson.code)
-                                    .map((jl) => (
-                                      <option key={jl.code} value={jl.code}>
-                                        {jl.name}
-                                      </option>
-                                    ))}
-                                </select>
-                                <Button
-                                  onClick={() => assignToJL(salesperson.code, jlSelections[salesperson.code] || "")}
-                                  disabled={!jlSelections[salesperson.code] || assigningUser === salesperson.code}
-                                  variant="default"
-                                  size="sm"
-                                >
-                                  {assigningUser === salesperson.code ? "Assigning..." : "Assign"}
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </TD>
-                        <TD>
-                          <div className="flex items-center space-x-2">
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => {
-                                const userToEdit = displayTeamData.allUsers.find(u => u.code === salesperson.code);
-                                if (userToEdit) {
-                                  setEditingUser(userToEdit);
-                                  setShowEditUser(true);
-                                }
+                                setEditingUser(salesperson);
+                                setShowEditUser(true);
                               }}
-                              className="text-blue-600 hover:text-blue-900 hover:bg-blue-50"
+                              className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 h-8 px-2"
                             >
                               <Edit className="w-4 h-4 mr-1" />
                               Edit
@@ -696,24 +727,19 @@ export default function TeamManagementPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteUser(salesperson.id ? String(salesperson.id) : (salesperson.code || ''))}
-                              disabled={isDeletingUser === (salesperson.id ? String(salesperson.id) : salesperson.code)}
-                              className={`${isDeletingUser === (salesperson.id ? String(salesperson.id) : salesperson.code)
-                                  ? 'text-slate-400 cursor-not-allowed'
-                                  : 'text-red-600 hover:text-red-900 hover:bg-red-50'
-                                }`}
+                              onClick={() =>
+                                handleDeleteUser(
+                                  salesperson.id ? String(salesperson.id) : salesperson.code
+                                )
+                              }
+                              disabled={
+                                isDeletingUser ===
+                                (salesperson.id ? String(salesperson.id) : salesperson.code)
+                              }
+                              className="text-red-600 hover:text-red-900 hover:bg-red-50 h-8 px-2"
                             >
-                              {isDeletingUser === (salesperson.id ? String(salesperson.id) : salesperson.code) ? (
-                                <div className="flex items-center space-x-1">
-                                  <div className="animate-spin h-3 w-3 border-2 border-slate-400 border-t-transparent rounded-full"></div>
-                                  <span>Deleting...</span>
-                                </div>
-                              ) : (
-                                <>
-                                  <Trash2 className="w-4 h-4 mr-1" />
-                                  Delete
-                                </>
-                              )}
+                              <Trash2 className="w-4 h-4 mr-1" />
+                              Delete
                             </Button>
                           </div>
                         </TD>
@@ -728,63 +754,131 @@ export default function TeamManagementPage() {
 
         {/* Add User Modal */}
         <Dialog open={showAddUser} onOpenChange={setShowAddUser}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle className="text-lg text-slate-900">Add New Team Member</DialogTitle>
+              <DialogTitle className="text-lg font-bold text-slate-900">Add New Team Member</DialogTitle>
+              <p className="text-xs text-slate-500">Create a team member account with an admin-assigned password</p>
             </DialogHeader>
-            <form onSubmit={handleAddUser} className="space-y-4">
+            <form onSubmit={handleAddUser} className="space-y-4 pt-2">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name *</label>
                 <Input
                   type="text"
                   required
                   value={newUser.name}
                   onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  placeholder="Enter full name"
+                  placeholder="e.g. John Doe"
                   className="border-slate-200"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                <Input
-                  type="email"
-                  required
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  placeholder="Enter email address"
-                  className="border-slate-200"
-                  autoComplete="email"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Email Address *</label>
+                  <Input
+                    type="email"
+                    required
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                    placeholder="john@example.com"
+                    className="border-slate-200"
+                    autoComplete="off"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number (Optional)</label>
+                  <Input
+                    type="tel"
+                    value={newUser.phone}
+                    onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                    placeholder="+1 234 567 8900"
+                    className="border-slate-200"
+                  />
+                </div>
               </div>
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> An invitation email will be sent to the team member. They will set their password when they accept the invitation.
-                </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Role *</label>
+                  <select
+                    className="w-full text-sm border border-slate-200 rounded-md p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={newUser.role}
+                    onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                  >
+                    <option value="sales">Sales Executive</option>
+                    <option value="jl">Junior Leader (JL)</option>
+                    <option value="teamleader">Team Leader</option>
+                    <option value="CEO">Super Admin / CEO</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Department (Optional)</label>
+                  <Input
+                    type="text"
+                    value={newUser.department}
+                    onChange={(e) => setNewUser({ ...newUser, department: e.target.value })}
+                    placeholder="e.g. Sales / Support"
+                    className="border-slate-200"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Target (₹)</label>
-                <Input
-                  type="number"
-                  required
-                  // value={newUser.target}
-                  onChange={(e) =>
-                    setNewUser({ ...newUser, target: parseInt(e.target.value)  })
-                  }
-                  placeholder="Enter target amount"
-                  className="border-slate-200"
-                />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Password *</label>
+                  <Input
+                    type="password"
+                    required
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    placeholder="Min 6 characters"
+                    className="border-slate-200"
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password *</label>
+                  <Input
+                    type="password"
+                    required
+                    value={newUser.confirmPassword}
+                    onChange={(e) => setNewUser({ ...newUser, confirmPassword: e.target.value })}
+                    placeholder="Re-enter password"
+                    className="border-slate-200"
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                  <select
+                    className="w-full text-sm border border-slate-200 rounded-md p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={newUser.status}
+                    onChange={(e) => setNewUser({ ...newUser, status: e.target.value })}
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Sales Target (₹)</label>
+                  <Input
+                    type="number"
+                    value={newUser.target || ""}
+                    onChange={(e) => setNewUser({ ...newUser, target: parseInt(e.target.value) || 0 })}
+                    placeholder="Target amount"
+                    className="border-slate-200"
+                  />
+                </div>
               </div>
 
               <div className="flex space-x-3 pt-4">
-                <Button
-                  type="submit"
-                  disabled={isAddingUser}
-                  className="flex-1"
-                >
+                <Button type="submit" disabled={isAddingUser} className="flex-1 bg-primary hover:bg-primary/90">
                   {isAddingUser ? (
                     <div className="flex items-center space-x-2">
                       <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                      <span>Adding...</span>
+                      <span>Creating Member...</span>
                     </div>
                   ) : (
                     <>
@@ -798,7 +892,7 @@ export default function TeamManagementPage() {
                   variant="outline"
                   onClick={() => setShowAddUser(false)}
                   disabled={isAddingUser}
-                  className="flex-1"
+                  className="flex-1 border-slate-200"
                 >
                   Cancel
                 </Button>
@@ -808,7 +902,7 @@ export default function TeamManagementPage() {
         </Dialog>
 
         {/* Edit User Modal */}
-        <Dialog open={showEditUser} onOpenChange={(open) => !open && setEditingUser(null) || setShowEditUser(open)}>
+        <Dialog open={showEditUser} onOpenChange={(open) => (!open && setEditingUser(null)) || setShowEditUser(open)}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="text-lg text-slate-900">Edit Team Member</DialogTitle>
@@ -816,24 +910,13 @@ export default function TeamManagementPage() {
             {editingUser && (
               <form onSubmit={handleUpdateUser} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
                   <Input
                     type="text"
                     required
                     value={editingUser.name}
                     onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
                     placeholder="Enter full name"
-                    className="border-slate-200"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Code</label>
-                  <Input
-                    type="text"
-                    required
-                    value={editingUser.code}
-                    onChange={(e) => setEditingUser({ ...editingUser, code: e.target.value })}
-                    placeholder="Enter user code"
                     className="border-slate-200"
                   />
                 </div>
@@ -848,34 +931,58 @@ export default function TeamManagementPage() {
                     className="border-slate-200"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Target (₹)</label>
-                  <Input
-                    type="number"
-                    required
-                    value={editingUser.target }
-                    onChange={(e) => setEditingUser({ ...editingUser, target: parseInt(e.target.value)  })}
-                    placeholder="Enter target amount"
-                    className="border-slate-200"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                    <Input
+                      type="text"
+                      value={editingUser.phone || ""}
+                      onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                      placeholder="Phone number"
+                      className="border-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Department</label>
+                    <Input
+                      type="text"
+                      value={editingUser.department || ""}
+                      onChange={(e) => setEditingUser({ ...editingUser, department: e.target.value })}
+                      placeholder="Department"
+                      className="border-slate-200"
+                    />
+                  </div>
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                    <select
+                      className="w-full text-sm border border-slate-200 rounded-md p-2 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                      value={editingUser.role}
+                      onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
+                    >
+                      <option value="sales">Sales Executive</option>
+                      <option value="jl">Junior Leader</option>
+                      <option value="teamleader">Team Leader</option>
+                      <option value="CEO">Super Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                    <select
+                      className="w-full text-sm border border-slate-200 rounded-md p-2 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                      value={editingUser.status || "Active"}
+                      onChange={(e) => setEditingUser({ ...editingUser, status: e.target.value })}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="flex space-x-3 pt-4">
-                  <Button
-                    type="submit"
-                    disabled={isUpdatingUser}
-                    className="flex-1"
-                  >
-                    {isUpdatingUser ? (
-                      <div className="flex items-center space-x-2">
-                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                        <span>Updating...</span>
-                      </div>
-                    ) : (
-                      <>
-                        <Edit className="w-4 h-4 mr-2" />
-                        Update Member
-                      </>
-                    )}
+                  <Button type="submit" disabled={isUpdatingUser} className="flex-1">
+                    {isUpdatingUser ? "Updating..." : "Update Member"}
                   </Button>
                   <Button
                     type="button"
@@ -895,18 +1002,77 @@ export default function TeamManagementPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Reset Password Modal */}
+        <Dialog open={showResetPassword} onOpenChange={setShowResetPassword}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-amber-600" />
+                Reset Password
+              </DialogTitle>
+              {resetTargetUser && (
+                <p className="text-sm text-slate-500">
+                  Enter new password for <span className="font-semibold text-slate-800">{resetTargetUser.name}</span> ({resetTargetUser.email})
+                </p>
+              )}
+            </DialogHeader>
+            <form onSubmit={handleResetPasswordSubmit} className="space-y-4 pt-2">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+                <Input
+                  type="password"
+                  required
+                  value={resetPasswordVal}
+                  onChange={(e) => setResetPasswordVal(e.target.value)}
+                  placeholder="Enter new password (min 6 characters)"
+                  className="border-slate-200"
+                  autoComplete="new-password"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label>
+                <Input
+                  type="password"
+                  required
+                  value={confirmResetPasswordVal}
+                  onChange={(e) => setConfirmResetPasswordVal(e.target.value)}
+                  placeholder="Re-enter new password"
+                  className="border-slate-200"
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <Button type="submit" disabled={isResettingPassword} className="flex-1 bg-amber-600 hover:bg-amber-700 text-white">
+                  {isResettingPassword ? "Saving Password..." : "Save New Password"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowResetPassword(false)}
+                  disabled={isResettingPassword}
+                  className="flex-1 border-slate-200"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         {/* Credentials Modal */}
         <Dialog open={showCredentials} onOpenChange={setShowCredentials}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
             <DialogHeader>
-              <DialogTitle className="text-lg text-slate-900">Team Credentials</DialogTitle>
-              <div className="flex items-center space-x-4 mt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleAllPasswords}
-                  className="gap-2"
-                >
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                    Team Credentials
+                  </DialogTitle>
+                  <p className="text-xs text-slate-500 mt-1">Admin-managed credentials for team members</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={toggleAllPasswords} className="gap-2 border-slate-200">
                   {visiblePasswords.size === credentials.length ? (
                     <>
                       <EyeOff className="w-4 h-4" />
@@ -921,90 +1087,107 @@ export default function TeamManagementPage() {
                 </Button>
               </div>
             </DialogHeader>
-            
-            <div className="flex-1 overflow-y-auto">
-              <Card className="mb-4 border border-slate-200/60">
-                  <CardContent className="p-4">
-                    <p className="text-sm text-slate-600 mb-2">
-                      <strong>Note:</strong> These are the login credentials for all team members. 
-                      Passwords are hidden by default for security. Click the eye icon to reveal passwords.
-                    </p>
-                    <p className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
-                      <strong>💡 Clerk Invitations:</strong> Team members who were added via invitation will set their own password when accepting the invitation. Their password field may be empty until they accept.
-                    </p>
-                  </CardContent>
-              </Card>
-              
+
+            <div className="flex-1 overflow-y-auto pt-2 space-y-4">
               <div className="grid gap-4">
-                {credentials.map((user) => (
-                  <Card key={user._id || user.code} className="border border-slate-200/60 shadow-sm">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
+                {credentials.map((user) => {
+                  const key = user._id || String(user.id) || user.code;
+                  const isVisible = visiblePasswords.has(key);
+                  return (
+                    <Card key={key} className="border border-slate-200/60 shadow-sm hover:border-slate-300 transition-all">
+                      <CardContent className="p-4">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                           <div className="flex items-center space-x-4">
-                            <div className="flex-shrink-0 h-12 w-12">
-                              <div className="h-12 w-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
-                                <span className="text-lg font-medium text-white">
-                                  {(user.name || '').split(' ').map(n => n[0]).join('').toUpperCase()}
-                                </span>
+                            <div className="h-12 w-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+                              <span className="text-lg font-bold text-white">
+                                {(user.name || "").split(" ").map((n) => n[0]).join("").toUpperCase()}
+                              </span>
+                            </div>
+                            <div>
+                              <div className="flex items-center space-x-2">
+                                <h3 className="text-base font-semibold text-slate-900">{user.name}</h3>
+                                <Badge className="text-xs capitalize bg-slate-100 text-slate-700 border-0">
+                                  {user.role || "sales"}
+                                </Badge>
                               </div>
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="text-lg font-semibold text-slate-900">{user.name}</h3>
-                              <p className="text-sm text-slate-500">{user.code}</p>
                               <p className="text-sm text-slate-500">{user.email}</p>
+                              {user.phone && <p className="text-xs text-slate-400">Phone: {user.phone}</p>}
                             </div>
                           </div>
-                        </div>
-                        
-                        <div className="flex items-center space-x-4">
-                          <div className="text-right">
-                            <div className="text-sm font-medium text-slate-900">Login ID</div>
-                            <div className="text-sm text-slate-600 font-mono bg-slate-100 px-2 py-1 rounded">
-                              {user.email}
-                            </div>
-                          </div>
-                          
-                          <div className="text-right">
-                            <div className="text-sm font-medium text-slate-900">Password</div>
-                            <div className="flex items-center space-x-2">
-                              <div className="text-sm text-slate-600 font-mono bg-slate-100 px-2 py-1 rounded min-w-[120px]">
-                                {visiblePasswords.has(user._id || user.code) ? (
-                                  user.password ? (
-                                    user.password
-                                  ) : (
-                                    <span className="text-blue-600 italic">Set via invitation</span>
-                                  )
-                                ) : '••••••'}
+
+                          <div className="flex flex-wrap items-center gap-3 md:justify-end">
+                            {/* Login ID */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5 flex items-center space-x-2">
+                              <div>
+                                <span className="text-[10px] font-semibold uppercase text-slate-400 block">Login ID</span>
+                                <span className="text-xs font-mono text-slate-800">{user.email}</span>
                               </div>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => togglePasswordVisibility(user._id || user.code)}
-                                className="p-1 h-8 w-8"
-                                title={visiblePasswords.has(user._id || user.code) ? 'Hide password' : 'Show password'}
+                                onClick={() => copyToClipboard(user.email, "Login ID")}
+                                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-800"
+                                title="Copy Login ID"
                               >
-                                {visiblePasswords.has(user._id || user.code) ? (
-                                  <EyeOff className="w-4 h-4 text-slate-500" />
-                                ) : (
-                                  <Eye className="w-4 h-4 text-slate-500" />
-                                )}
+                                <Copy className="w-3.5 h-3.5" />
                               </Button>
                             </div>
+
+                            {/* Password */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5 flex items-center space-x-2 min-w-[170px]">
+                              <div className="flex-1">
+                                <span className="text-[10px] font-semibold uppercase text-slate-400 block">Password</span>
+                                <span className="text-xs font-mono text-slate-800">
+                                  {isVisible ? "••••••••" : "••••••••"}
+                                </span>
+                              </div>
+                              <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">
+                                Password Set
+                              </Badge>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => togglePasswordVisibility(key)}
+                                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-800"
+                                title={isVisible ? "Hide Password" : "Show Password"}
+                              >
+                                {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => copyToClipboard(user.email, "User Login ID / Email")}
+                                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-800"
+                                title="Copy Login Email"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+
+                            {/* Reset Password Action */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openResetPasswordModal(user)}
+                              className="gap-1.5 text-xs text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                              Reset Password
+                            </Button>
                           </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
-              
+
               {credentials.length === 0 && (
                 <Card className="border border-slate-200/60">
                   <CardContent className="text-center py-8">
                     <Users className="mx-auto h-12 w-12 text-slate-400" />
                     <h3 className="mt-2 text-sm font-medium text-slate-900">No team members found</h3>
-                    <p className="mt-1 text-sm text-slate-500">Add team members to view their credentials.</p>
+                    <p className="mt-1 text-sm text-slate-500">Add team members to manage their credentials.</p>
                   </CardContent>
                 </Card>
               )}
@@ -1014,4 +1197,4 @@ export default function TeamManagementPage() {
       </div>
     </div>
   );
-} 
+}

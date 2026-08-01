@@ -1068,8 +1068,11 @@ export default function TeamLeaderPage() {
                           <div className="text-sm font-medium text-gray-900">Password</div>
                           <div className="flex items-center space-x-2">
                             <div className="text-sm text-gray-600 font-mono bg-gray-100 px-2 py-1 rounded min-w-[120px]">
-                              {visiblePasswords.has(user._id) ? (user.password || 'No password set') : '••••••'}
+                              ••••••••
                             </div>
+                            <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">
+                              Password Set
+                            </Badge>
                             <Button
                               variant="ghost"
                               size="sm"

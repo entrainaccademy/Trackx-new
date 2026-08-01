@@ -246,7 +246,7 @@ export default function LeadsPage() {
       }
     }
     
-    fetch("/api/users")
+    fetch("/api/users?role=sales")
       .then((r) => r.json())
       .then((all) => {
         const onlySales = (Array.isArray(all) ? all : []).filter((u: any) => (u.role ?? 'sales') === "sales");

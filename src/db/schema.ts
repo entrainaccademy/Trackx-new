@@ -218,6 +218,9 @@ export const users = pgTable(
     code: varchar("code", { length: 255 }),
     name: varchar("name", { length: 255 }),
     role: varchar("role", { length: 32 }).notNull().default("sales"), // teamleader | jl | sales | CEO
+    phone: varchar("phone", { length: 32 }),
+    department: varchar("department", { length: 100 }),
+    status: varchar("status", { length: 20 }).default("Active"), // Active | Inactive
     target: integer("target").default(0),
     tenantId: integer("tenant_id"),
     lastLogin: timestamp("last_login", { withTimezone: true }),

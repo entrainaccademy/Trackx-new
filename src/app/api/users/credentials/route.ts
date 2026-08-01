@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { authenticateRequest, createUnauthorizedResponse } from "@/lib/clerkAuth";
 import { getTenantIdFromOrgSlug } from "@/lib/clerkOrganization";
 
 /**
  * Get user credentials for team management
- * Since we're using Clerk invitations, passwords are set by users when they accept invitations
+ * Passwords are managed by Admin and stored as bcrypt hashes in database.
+ * Passwords are masked in API response for security.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -60,21 +61,28 @@ export async function GET(req: NextRequest) {
         code: users.code,
         name: users.name,
         email: users.email,
+        phone: users.phone,
+        department: users.department,
+        status: users.status,
         role: users.role,
-        password: users.password, // May be empty for Clerk users
+        password: users.password,
       })
       .from(users)
       .where(eq(users.tenantId, tenantId));
 
-    // Return user data with note about Clerk invitations
-    const credentials = allUsers.map(user => ({
+    // Map credentials - NEVER return raw hash to client
+    const credentials = allUsers.map((user: any) => ({
       _id: user.id.toString(),
+      id: user.id,
       code: user.code || user.email,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      password: user.password || '', // Empty for Clerk users (they set it via invitation)
-      hasClerkInvitation: !user.password, // If no password, they're using Clerk
+      name: user.name || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      department: user.department || '',
+      status: user.status || 'Active',
+      role: user.role || 'sales',
+      passwordSet: !!user.password,
+      password: user.password ? '••••••••' : '',
     }));
 
     return NextResponse.json(credentials);
@@ -86,4 +94,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

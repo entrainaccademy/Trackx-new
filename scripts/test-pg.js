@@ -4,12 +4,9 @@ const { Pool } = require('pg');
 
 (async () => {
 	try {
-		const url = process.env.DATABASE_URL || process.env.PSQL || process.env.NEON_DATABASE_URL;
-		console.log('DATABASE_URL present:', Boolean(url));
-		if (!url) {
-			console.error('No DATABASE_URL found in environment');
-			process.exit(1);
-		}
+		const raw = process.env.DATABASE_URL || process.env.PSQL || process.env.NEON_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/trackx';
+		console.log('DATABASE_URL present:', Boolean(process.env.DATABASE_URL || process.env.PSQL || process.env.NEON_DATABASE_URL));
+		const url = raw.trim();
 		const hostname = new URL(url).hostname;
 		const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
 		const pool = new Pool({ connectionString: url, ssl: isLocal ? false : { rejectUnauthorized: false } });

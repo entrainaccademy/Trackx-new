@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
       .where(reportsWhere);
 
     // Get report IDs and fetch entries
-    const reportIds = allDailyReports.map(r => r.id);
+    const reportIds = allDailyReports.map((r: any) => r.id);
     let allReportEntries: typeof dailyReportEntries.$inferSelect[] = [];
     if (reportIds.length > 0) {
       allReportEntries = await db
@@ -123,11 +123,11 @@ export async function GET(req: NextRequest) {
     let targetUsers = allUsers;
     if (salesPersonIds) {
       const idsArray = salesPersonIds.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
-      targetUsers = allUsers.filter((u) => idsArray.includes(u.id));
+      targetUsers = allUsers.filter((u: any) => idsArray.includes(u.id));
     }
 
     // Calculate KPIs for each salesperson
-    const kpiData = targetUsers.map((user) => {
+    const kpiData = targetUsers.map((user: any) => {
       const userName = (user.name || '').toLowerCase();
       
       // Get sales for this user (match by ogaName)
@@ -153,7 +153,7 @@ export async function GET(req: NextRequest) {
       const allDates = new Set<string>();
       
       // Add dates from daily reports
-      allDailyReports.forEach((report) => {
+      allDailyReports.forEach((report: any) => {
         const entries = allReportEntries.filter(e => e.reportId === report.id);
         const hasEntry = entries.some(e => e.salespersonName?.toLowerCase() === userName);
         if (hasEntry) {
@@ -175,7 +175,7 @@ export async function GET(req: NextRequest) {
         const salesCount = dailySalesCountMap.get(dateStr) || 0;
         
         // Find corresponding daily report data
-        const reportForDate = allDailyReports.find((report) => {
+        const reportForDate = allDailyReports.find((report: any) => {
           const reportDate = new Date(report.date).toISOString().split('T')[0];
           return reportDate === dateStr;
         });

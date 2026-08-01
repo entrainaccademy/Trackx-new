@@ -248,7 +248,7 @@ function Navbar({ onOpenMobile }: { onOpenMobile: () => void }) {
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b">
       <div className="max-w-7xl mx-auto px-6 py-3">
         <div className="flex items-center justify-between">
-          <Link href="#" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg grid place-items-center">
               <span className="text-white font-bold text-lg">TX</span>
                 </div>
@@ -313,10 +313,10 @@ function Footer() {
           <div>
             <h3 className="font-semibold mb-4">Resources</h3>
             <ul className="space-y-2 text-sm text-slate-400">
-              <li><Link href="#" className="hover:text-white transition-colors">Support</Link></li>
-              <li><Link href="#" className="hover:text-white transition-colors">Contact</Link></li>
-              <li><Link href="#" className="hover:text-white transition-colors">Terms & Conditions</Link></li>
-              <li><Link href="#" className="hover:text-white transition-colors">Privacy Policy</Link></li>
+              <li><Link href="#faq" className="hover:text-white transition-colors">Support</Link></li>
+              <li><a href="mailto:support@thetrackx.com" className="hover:text-white transition-colors">Contact</a></li>
+              <li><Link href="#pricing" className="hover:text-white transition-colors">Terms & Conditions</Link></li>
+              <li><Link href="#pricing" className="hover:text-white transition-colors">Privacy Policy</Link></li>
             </ul>
                     </div>
               

@@ -1,8 +1,8 @@
-// No need for NextRequest in a Route Handler; use the standard Request type
 import { db } from "@/db/client";
-import { leads, leadEvents, tasks, courses } from "@/db/schema";
+import { leads, leadEvents, tasks, courses, users } from "@/db/schema";
 import { and, eq, desc, inArray, or, sql } from "drizzle-orm";
 import { requireTenantIdFromRequest } from "@/lib/tenant";
+import { authenticateRequest } from "@/lib/clerkAuth";
 import { NextResponse } from "next/server";
 import { addPerformanceHeaders, CACHE_DURATION } from "@/lib/performance";
 
@@ -50,6 +50,25 @@ export async function GET(_req: Request, { params }: any) {
       const response = NextResponse.json({ success: false, error: "not found" }, { status: 404 });
       return addPerformanceHeaders(response, CACHE_DURATION.SHORT);
     }
+
+    // Role-based access control: Sales users can only access their assigned lead
+    const authResult = await authenticateRequest(_req);
+    const reqEmail = authResult.email || _req.headers.get("x-user-email");
+    if (reqEmail) {
+      const currentUserResult = await db
+        .select({ id: users.id, code: users.code, email: users.email, name: users.name, role: users.role })
+        .from(users)
+        .where(eq(users.email, reqEmail.trim()))
+        .limit(1);
+
+      if (currentUserResult.length > 0 && currentUserResult[0].role === 'sales') {
+        const u = currentUserResult[0];
+        const isOwner = lead.ownerId === String(u.id) || lead.ownerId === u.code || lead.ownerId === u.email || lead.ownerId === u.name;
+        if (!isOwner) {
+          return NextResponse.json({ success: false, error: "Access denied. You can only view leads assigned to you." }, { status: 403 });
+        }
+      }
+    }
     // Build phone variants to handle + prefix and spaces
     const variantsSet = new Set<string>();
     const base = String(lead.phone || "");
@@ -72,8 +91,8 @@ export async function GET(_req: Request, { params }: any) {
       .orderBy(desc(leadEvents.at));
     
     console.log('Events found:', events.length);
-    console.log('Event types:', events.map(e => e.type));
-    console.log('Event lead phones:', events.map(e => e.leadPhone));
+    console.log('Event types:', events.map((e: any) => e.type));
+    console.log('Event lead phones:', events.map((e: any) => e.leadPhone));
     // Select only columns that are guaranteed to exist to avoid errors if migrations haven't been applied
     const openTasks = await db
       .select({ id: tasks.id, leadPhone: tasks.leadPhone, title: tasks.title, status: tasks.status, dueAt: tasks.dueAt, createdAt: tasks.createdAt })
@@ -129,6 +148,26 @@ export async function PUT(_req: Request, { params }: any) {
 
     console.log('Current lead found:', currentLead[0]);
     console.log('Current stage:', currentLead[0].stage, 'New stage:', stage);
+
+    // Role-based access control for PUT
+    const authResult = await authenticateRequest(_req);
+    const reqEmail = authResult.email || _req.headers.get("x-user-email");
+    if (reqEmail) {
+      const currentUserResult = await db
+        .select({ id: users.id, code: users.code, email: users.email, name: users.name, role: users.role })
+        .from(users)
+        .where(eq(users.email, reqEmail.trim()))
+        .limit(1);
+
+      if (currentUserResult.length > 0 && currentUserResult[0].role === 'sales') {
+        const u = currentUserResult[0];
+        const targetLead = currentLead[0];
+        const isOwner = targetLead.ownerId === String(u.id) || targetLead.ownerId === u.code || targetLead.ownerId === u.email || targetLead.ownerId === u.name;
+        if (!isOwner) {
+          return NextResponse.json({ success: false, error: "Access denied. You can only update leads assigned to you." }, { status: 403 });
+        }
+      }
+    }
 
     const updateData: any = {};
     if (stage !== undefined) updateData.stage = stage;

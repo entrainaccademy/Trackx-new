@@ -127,12 +127,13 @@ export default function DashboardPage() {
   } | null>(null);
 
   // Get user from database
+  // Get user from database
   useEffect(() => {
-    if (!isLoaded || !clerkUser) return;
+    if (!isLoaded) return;
 
     const loadUser = async () => {
       try {
-        const email = clerkUser.emailAddresses[0]?.emailAddress;
+        const email = clerkUser?.emailAddresses[0]?.emailAddress || (typeof window !== "undefined" ? localStorage.getItem("trackx_user_email") : null);
         if (!email) {
           setIsLoading(false);
           return;
@@ -143,7 +144,7 @@ export default function DashboardPage() {
           const data = await response.json();
           if (data.success && data.user) {
             setDbUser({
-              name: data.user.name || clerkUser.fullName || "",
+              name: data.user.name || clerkUser?.fullName || "",
               code: data.user.code || email,
               email: data.user.email || email,
               role: data.user.role,
@@ -163,7 +164,7 @@ export default function DashboardPage() {
 
   // Load sales data
   useEffect(() => {
-    if (!isLoaded || !clerkUser) return;
+    if (!isLoaded) return;
 
     const loadSales = async () => {
       try {

@@ -1,36 +1,31 @@
+"use client";
+
+import { useState } from "react";
 import { SignIn } from "@clerk/nextjs";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, UserCheck, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import TeamMemberLoginForm from "@/components/auth/TeamMemberLoginForm";
 
-export default async function LoginPage({
-  params,
-}: {
-  params: Promise<{ "sign-in"?: string[] }>;
-}) {
-  const signInPath = (await params)["sign-in"];
-
-  if (signInPath?.[0] === "redirect") {
-    redirect("/auth-redirect");
-  }
+export default function LoginPage() {
+  const [loginTab, setLoginTab] = useState<"admin" | "team">("team");
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 py-4">
+      <div className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-              <ArrowLeft className="w-5 h-5" />
-              <span className="font-medium">Back to Home</span>
+            <Link href="/" className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+              <span className="font-medium text-sm">Back to Home</span>
             </Link>
-            
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">Don't have an account?</span>
+
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 hidden sm:inline">Need an organization account?</span>
               <Link href="/signup">
-                <Button variant="ghost" className="text-primary hover:text-primary/90 font-medium">
-                  Sign Up
+                <Button variant="outline" size="sm" className="text-xs font-medium border-slate-200">
+                  Sign Up Organization
                 </Button>
               </Link>
             </div>
@@ -39,51 +34,80 @@ export default async function LoginPage({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex items-center justify-center px-4 py-12">
+      <div className="flex-1 flex items-center justify-center px-4 py-8">
         <div className="w-full max-w-2xl">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome to TrackX</h1>
-            <p className="text-gray-600">Enter your login details to continue</p>
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-bold text-slate-900 mb-2">Welcome to TrackX</h1>
+            <p className="text-sm text-slate-600">Select your login method to continue</p>
           </div>
-          
-          <SignIn 
-            appearance={{
-              elements: {
-                rootBox: "mx-auto",
-                card: "shadow-xl border-0",
-                formFieldInput: "focus:ring-primary",
-              },
-            }}
-            routing="path"
-            path="/login"
-            signUpUrl="/signup"
-            afterSignInUrl="/auth-redirect"
-            redirectUrl="/auth-redirect"
-            forceRedirectUrl="/auth-redirect"
-          />
+
+          {/* Toggle Tabs */}
+          <div className="flex justify-center mb-8">
+            <div className="bg-slate-200/70 p-1 rounded-xl flex space-x-1 max-w-md w-full shadow-inner">
+              <button
+                onClick={() => setLoginTab("team")}
+                className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-4 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                  loginTab === "team"
+                    ? "bg-white text-emerald-700 shadow-md"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>Team Member Login</span>
+              </button>
+              <button
+                onClick={() => setLoginTab("admin")}
+                className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-4 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                  loginTab === "admin"
+                    ? "bg-white text-indigo-700 shadow-md"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Admin / Org Login</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Contents */}
+          {loginTab === "team" ? (
+            <TeamMemberLoginForm />
+          ) : (
+            <div className="w-full flex justify-center">
+              <SignIn
+                appearance={{
+                  elements: {
+                    rootBox: "mx-auto w-full",
+                    card: "shadow-xl border border-slate-200/80 rounded-2xl",
+                    formFieldInput: "focus:ring-primary",
+                  },
+                }}
+                routing="path"
+                path="/login"
+                signUpUrl="/signup"
+                afterSignInUrl="/auth-redirect"
+                redirectUrl="/auth-redirect"
+                forceRedirectUrl="/auth-redirect"
+              />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Footer */}
-      <div className="bg-white border-t border-gray-200 px-4 py-4">
-        <div className="flex flex-col sm:flex-row justify-between items-center text-sm text-gray-500 max-w-6xl mx-auto">
+      <div className="bg-white border-t border-slate-200 px-4 py-4 mt-auto">
+        <div className="flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 max-w-6xl mx-auto">
           <div className="flex items-center space-x-2 mb-2 sm:mb-0">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-            </svg>
-            <span>English</span>
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            <span>TrackX CRM</span>
+            <span>•</span>
+            <span>Admin-Controlled Password System</span>
           </div>
           <div className="flex items-center space-x-4">
-            <Link href="#" className="hover:text-gray-700">Help</Link>
+            <a href="mailto:support@thetrackx.com" className="hover:text-slate-700">Help</a>
             <span>•</span>
-            <Link href="#" className="hover:text-gray-700">Terms Of Service</Link>
+            <Link href="/#pricing" className="hover:text-slate-700">Terms</Link>
             <span>•</span>
-            <Link href="#" className="hover:text-gray-700">Privacy Policy</Link>
-            <span>•</span>
-            <Link href="#" className="hover:text-gray-700">Acceptable Use</Link>
+            <Link href="/#pricing" className="hover:text-slate-700">Privacy</Link>
           </div>
         </div>
       </div>

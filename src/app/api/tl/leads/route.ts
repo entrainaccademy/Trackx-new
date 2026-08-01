@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, or, desc, eq, ilike, gte, lte, sql, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { leads, leadEvents, leadListItems } from "@/db/schema";
+import { leads, leadEvents, leadListItems, users } from "@/db/schema";
 import { requireTenantIdFromRequest } from "@/lib/tenant";
 import { authenticateRequest, createUnauthorizedResponse } from "@/lib/clerkAuth";
-import { getCachedResponse, addPerformanceHeaders, CACHE_DURATION } from "@/lib/performance";
+import { getCachedResponse, addPerformanceHeaders, CACHE_DURATION, clearAllCache } from "@/lib/performance";
 
 export async function GET(req: NextRequest) {
   try {
@@ -163,6 +163,32 @@ export async function GET(req: NextRequest) {
       filters.push(lte(leads.lastActivityAt, endDate) as any);
     }
 
+    // Role-based scoping: Sales users can ONLY see leads assigned to them
+    const reqEmail = authResult.email || req.cookies.get("trackx_user_email")?.value || req.headers.get("x-user-email");
+    if (reqEmail) {
+      try {
+        const currentUserResult = await db
+          .select({ id: users.id, code: users.code, email: users.email, name: users.name, role: users.role })
+          .from(users)
+          .where(eq(users.email, reqEmail.trim()))
+          .limit(1);
+        
+        if (currentUserResult.length > 0 && currentUserResult[0].role === 'sales') {
+          const userProf = currentUserResult[0];
+          filters.push(
+            or(
+              eq(leads.ownerId, String(userProf.id)),
+              eq(leads.ownerId, userProf.code || ""),
+              eq(leads.ownerId, userProf.email),
+              eq(leads.ownerId, userProf.name || "")
+            )
+          );
+        }
+      } catch (err) {
+        console.error("Error scoping leads by user role:", err);
+      }
+    }
+
     const where = filters.length ? and(...filters) : undefined;
     let tenantId: number;
     try {
@@ -198,54 +224,51 @@ export async function GET(req: NextRequest) {
     })}`;
     
     
-    let rows = await getCachedResponse(
-      cacheKey,
-      async () => {
-        // Optimized query using a computed subquery with LEFT JOIN
-        const leadsWithCallCount = await db.execute(sql`
-          SELECT 
-            l.*,
-            COALESCE((
-              SELECT COUNT(*) 
-              FROM lead_events le
-              WHERE le.lead_phone = l.phone 
-              AND le.type = 'STAGE_CHANGE'
-              AND le.tenant_id = l.tenant_id
-            ), 0) as call_count
-          FROM leads l
-          WHERE l.tenant_id = ${tenantId}
-            ${q ? sql`AND (l.name ILIKE ${`%${q}%`} OR l.phone ILIKE ${`%${q}%`} OR l.email ILIKE ${`%${q}%`})` : sql``}
-            ${stage ? sql`AND l.stage = ${stage}` : sql``}
-            ${owner === "unassigned"
-              ? sql`AND l.owner_id IS NULL`
-              : owner
-              ? sql`AND l.owner_id = ${owner}`
-              : sql``}
-              ${
-                needFollowupParam === "true"
-                  ? sql`AND l.need_followup = true`
-                  : needFollowupParam === "false"
-                  ? sql`AND l.need_followup = false`
-                  : sql``
-              }
-            ${source ? sql`AND l.source = ${source}` : sql``}
-            ${minScore !== undefined ? sql`AND l.score >= ${minScore}` : sql``}
-            ${maxScore !== undefined ? sql`AND l.score <= ${maxScore}` : sql``}
-          ORDER BY ${sortByCallCount ? sql`call_count DESC` : sql`l.created_at DESC`}
-          LIMIT ${limit} OFFSET ${offset}
-        `);
-        
-        return leadsWithCallCount.rows.map((row: any) => ({
-          ...row,
-          callCount: Number(row.call_count) || 0
-        }));
-      },
-      CACHE_DURATION.MEDIUM
-    );
+    const leadsData = await db
+      .select({
+        id: leads.id,
+        phone: leads.phone,
+        name: leads.name,
+        email: leads.email,
+        address: leads.address,
+        alternateNumber: leads.alternateNumber,
+        source: leads.source,
+        utm: leads.utm,
+        stage: leads.stage,
+        ownerId: leads.ownerId,
+        score: leads.score,
+        lastActivityAt: leads.lastActivityAt,
+        needFollowup: leads.needFollowup,
+        followupDate: leads.followupDate,
+        followupNotes: leads.followupNotes,
+        courseId: leads.courseId,
+        paidAmount: leads.paidAmount,
+        tenantId: leads.tenantId,
+        createdAt: leads.createdAt,
+        updatedAt: leads.updatedAt,
+        consent: leads.consent,
+        callCount: sql<number>`COALESCE((
+          SELECT COUNT(*) 
+          FROM lead_events le
+          WHERE le.lead_phone = ${leads.phone} 
+          AND le.type = 'STAGE_CHANGE'
+          AND (le.tenant_id = ${leads.tenantId} OR le.tenant_id IS NULL)
+        ), 0)`
+      })
+      .from(leads)
+      .where(scopedWhere as any)
+      .orderBy(sortByCallCount ? desc(sql`callCount`) : desc(leads.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    let rows = leadsData.map((row: any) => ({
+      ...row,
+      callCount: Number(row.callCount) || 0
+    }));
     
     // Apply call count filtering if specified
     if (callCountMin || callCountMax) {
-      rows = rows.filter(row => {
+      rows = rows.filter((row: any) => {
         const callCount = row.callCount || 0;
         const min = callCountMin ? Number(callCountMin) : 0;
         const max = callCountMax ? Number(callCountMax) : Infinity;
@@ -259,9 +282,11 @@ export async function GET(req: NextRequest) {
       .where(scopedWhere as any);
 
     const response = NextResponse.json({ success: true, rows, total: Number((totalRow[0] as any)?.c || 0) });
-    return addPerformanceHeaders(response, CACHE_DURATION.MEDIUM);
+    response.headers.set('Cache-Control', 'no-store, max-age=0');
+    return response;
   } catch (e: any) {
-    return new Response(JSON.stringify({ success: false, error: e?.message || "Failed to fetch leads" }), { status: 500 });
+    console.error("GET /api/tl/leads error:", e?.stack || e?.message);
+    return NextResponse.json({ success: false, error: e?.message || "Failed to fetch leads" }, { status: 500 });
   }
 }
 
@@ -280,7 +305,7 @@ export async function POST(req: NextRequest) {
     } catch {
       return new Response(JSON.stringify({ success: false, error: "Tenant not resolved" }), { status: 400 });
     }
-    const { phone, name, email, address, alternateNumber, source, stage, score, listId, notes } = body || {};
+    const { phone, name, email, address, alternateNumber, source, stage, score, listId, notes, ownerId, owner } = body || {};
     if (!phone || typeof phone !== "string" || phone.trim() === "") {
       return new Response(JSON.stringify({ success: false, error: "phone is required" }), { status: 400 });
     }
@@ -291,7 +316,8 @@ export async function POST(req: NextRequest) {
       address: address ?? null,
       alternateNumber: alternateNumber ?? null,
       source: source ?? null,
-              stage: stage ?? "Not contacted",
+      stage: stage ?? "Not contacted",
+      ownerId: ownerId || owner || null,
       score: typeof score === "number" ? score : undefined,
       tenantId: tenantId,
     } as any;
@@ -326,6 +352,7 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+    clearAllCache();
     return new Response(JSON.stringify({ success: true, phone: inserted[0]?.phone }), { status: 201 });
   } catch (e: any) {
     const msg = String(e?.message || "Failed to create lead");
@@ -422,7 +449,7 @@ export async function DELETE(req: NextRequest) {
     // Keep deletion minimal to avoid missing imports; tasks cleanup can be handled separately if needed.
     const deleted = await db.delete(leads).where(and(inArray(leads.phone, phones), eq(leads.tenantId, tenantId))).returning({ phone: leads.phone });
 
-    return new Response(JSON.stringify({ success: true, deleted: deleted.map(d => d.phone) }), { status: 200 });
+    return new Response(JSON.stringify({ success: true, deleted: deleted.map((d: any) => d.phone) }), { status: 200 });
   } catch (e: any) {
     return new Response(JSON.stringify({ success: false, error: e?.message || "Failed to delete leads" }), { status: 500 });
   }

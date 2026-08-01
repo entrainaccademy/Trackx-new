@@ -6,25 +6,35 @@ import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 // Clerk handles authentication automatically via cookies - no need for fetch
 import { normalizeCsvToUtf8 } from "@/utils/normalizeCsvToUtf8";
 
 export function AddLeadModal({ open, onClose, onCreated, onListCreated }: { open: boolean; onClose: () => void; onCreated: () => void; onListCreated?: (list: { id: number; name: string }) => void }) {
-  const [form, setForm] = useState<{ phone: string; name?: string; email?: string; address?: string; alternateNumber?: string; source?: string; stage?: string; score?: number; notes?: string }>({ phone: "" });
+  const [form, setForm] = useState<{ phone: string; name?: string; email?: string; address?: string; alternateNumber?: string; source?: string; stage?: string; score?: number; notes?: string; ownerId?: string }>({ phone: "" });
   const [submitting, setSubmitting] = useState(false);
   const [lists, setLists] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedListId, setSelectedListId] = useState<string>("");
   const [showCreateList, setShowCreateList] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [creatingList, setCreatingList] = useState(false);
+  const [salesUsers, setSalesUsers] = useState<Array<{ id: number; code: string; name: string; email: string }>>([]);
 
-  // Load lists when modal opens
+  // Load lists and sales users when modal opens
   useEffect(() => {
     if (open) {
       fetch("/api/tl/lists")
         .then((r) => r.json())
         .then((d) => setLists(d?.rows || []))
+        .catch(() => {});
+
+      fetch("/api/users?role=sales")
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setSalesUsers(data);
+          }
+        })
         .catch(() => {});
     }
   }, [open]);
@@ -75,6 +85,7 @@ export function AddLeadModal({ open, onClose, onCreated, onListCreated }: { open
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Add Lead</DialogTitle>
+          <DialogDescription className="sr-only">Add a new lead to your system</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <Input placeholder="Phone (required)" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
@@ -97,6 +108,23 @@ export function AddLeadModal({ open, onClose, onCreated, onListCreated }: { open
             className="resize-none"
           />
           
+          {/* Owner / Assign To Sales Member */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-700">Assign To (Sales Member)</label>
+            <select
+              value={form.ownerId || ""}
+              onChange={(e) => setForm({ ...form, ownerId: e.target.value })}
+              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+            >
+              <option value="">Unassigned</option>
+              {salesUsers.map((user) => (
+                <option key={user.code || user.email} value={user.code || user.email}>
+                  {user.name} ({user.email})
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* List Selection */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700">Add to List</label>
@@ -152,8 +180,9 @@ export function AddLeadModal({ open, onClose, onCreated, onListCreated }: { open
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Create New List</DialogTitle>
+            <DialogDescription className="text-sm text-gray-600">Give your list a name.</DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-gray-600">Give your list a name.</p>
+
           <div className="mt-4">
             <Input
               type="text"
@@ -872,6 +901,7 @@ export function ImportLeadsModal({ open, onClose, onImported, onListCreated }: {
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import Leads</DialogTitle>
+          <DialogDescription className="sr-only">Upload CSV or Excel file to import leads</DialogDescription>
         </DialogHeader>
         <div className="space-y-6">
           
@@ -923,8 +953,8 @@ export function ImportLeadsModal({ open, onClose, onImported, onListCreated }: {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Create New List</DialogTitle>
+            <DialogDescription className="text-sm text-gray-600">Give your list a name.</DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-gray-600">Give your list a name.</p>
           <div className="mt-4">
             <Input
               type="text"

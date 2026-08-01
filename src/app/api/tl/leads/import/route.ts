@@ -117,12 +117,12 @@ export async function POST(req: NextRequest) {
 
     if (inserted.length) {
       const ev = inserted
-        .filter((r) => r.phone)
+        .filter((r: any) => r.phone)
         .map((r: { phone: string; source: string | null }) => ({ leadPhone: r.phone, type: "CREATED", data: { source: r.source }, at: new Date(), tenantId: tenantId }));
       if (ev.length) await db.insert(leadEvents).values(ev as any);
       // ASSIGNED events for imported owner assignments
       const assigned = inserted
-        .filter((r) => r.phone && phoneToOwnerEmail.has(r.phone))
+        .filter((r: any) => r.phone && phoneToOwnerEmail.has(r.phone))
         .map((r: { phone: string }) => ({
           leadPhone: r.phone,
           type: "ASSIGNED",
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
       
       // NOTE_ADDED events for imported notes
       const noteEvents = inserted
-        .filter((r) => r.phone && phoneToNotes.has(r.phone))
+        .filter((r: any) => r.phone && phoneToNotes.has(r.phone))
         .map((r: { phone: string }) => ({
           leadPhone: r.phone,
           type: "NOTE_ADDED",
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
       if (listId && typeof listId === "number" && inserted.length > 0) {
         try {
           const listItems = inserted
-            .filter((r) => r.phone)
+            .filter((r: any) => r.phone)
             .map((r: { phone: string }) => ({
               listId: listId,
               leadPhone: r.phone,

@@ -66,13 +66,13 @@ export default function SignupPage() {
             </svg>
           </div>
           <div className="flex items-center space-x-4">
-            <Link href="#" className="hover:text-gray-700">Help</Link>
+            <a href="mailto:support@thetrackx.com" className="hover:text-gray-700">Help</a>
             <span>•</span>
-            <Link href="#" className="hover:text-gray-700">Terms Of Service</Link>
+            <Link href="/#pricing" className="hover:text-gray-700">Terms Of Service</Link>
             <span>•</span>
-            <Link href="#" className="hover:text-gray-700">Privacy Policy</Link>
+            <Link href="/#pricing" className="hover:text-gray-700">Privacy Policy</Link>
             <span>•</span>
-            <Link href="#" className="hover:text-gray-700">Acceptable Use</Link>
+            <Link href="/#pricing" className="hover:text-gray-700">Acceptable Use</Link>
           </div>
         </div>
       </div>
