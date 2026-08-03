@@ -275,13 +275,23 @@ export default function TenantDetailPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="bg-blue-50 rounded-xl p-4">
                 <div className="flex items-center gap-3">
                   <Users className="w-6 h-6 text-blue-600" />
                   <div>
                     <p className="text-2xl font-bold text-blue-600">{teamLeaders.length}</p>
                     <p className="text-sm text-blue-600">Team Leaders</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-indigo-50 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <Building className="w-6 h-6 text-indigo-600" />
+                  <div>
+                    <p className="text-2xl font-bold text-indigo-600">{tenant.metadata?.staffCount ?? "N/A"}</p>
+                    <p className="text-sm text-indigo-600">Staff Count</p>
                   </div>
                 </div>
               </div>

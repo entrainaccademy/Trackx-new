@@ -141,6 +141,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Invalid subdomain" }, { status: 400 });
       }
 
+      if (metadata?.staffCount !== undefined && (typeof metadata.staffCount !== 'number' || metadata.staffCount <= 0)) {
+        return NextResponse.json({ error: "Company Staff Count must be a positive numeric value" }, { status: 400 });
+      }
+
       const existing = await db
         .select({ id: tenants.id })
         .from(tenants)

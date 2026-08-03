@@ -15,8 +15,7 @@ interface OnboardingForm {
   subdomain: string;
   contactName: string;
   email: string;
-  phone: string;
-  expectedUsers: string;
+  staffCount: string;
   industry: string;
 }
 
@@ -36,8 +35,7 @@ export default function OnboardingPage() {
     subdomain: "",
     contactName: "",
     email: "",
-    phone: "",
-    expectedUsers: "1-10",
+    staffCount: "",
     industry: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -166,6 +164,12 @@ export default function OnboardingPage() {
       return;
     }
 
+    const staffCountNum = parseInt(form.staffCount, 10);
+    if (isNaN(staffCountNum) || staffCountNum <= 0) {
+      setMessage({ type: "error", text: "Please enter a valid numeric Company Staff Count" });
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage(null);
 
@@ -177,8 +181,7 @@ export default function OnboardingPage() {
       formData.append('metadata', JSON.stringify({
         contactName: form.contactName,
         email: form.email,
-        phone: form.phone,
-        expectedUsers: form.expectedUsers,
+        staffCount: staffCountNum,
         industry: form.industry,
         onboardingDate: new Date().toISOString(),
       }));
@@ -444,52 +447,35 @@ export default function OnboardingPage() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
-                {/* Phone */}
+                {/* Company Staff Count */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone
+                    Company Staff Count *
                   </label>
                   <Input
-                    type="tel"
-                    name="phone"
-                    value={form.phone}
+                    type="number"
+                    name="staffCount"
+                    value={form.staffCount}
                     onChange={handleInputChange}
-                    placeholder="+1 (555) 123-4567"
+                    required
+                    min={1}
+                    placeholder="Enter staff count (e.g. 25)"
                   />
                 </div>
 
-                {/* Expected Users */}
+                {/* Industry */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Expected Users
+                    Industry
                   </label>
-                  <select
-                    name="expectedUsers"
-                    value={form.expectedUsers}
+                  <Input
+                    type="text"
+                    name="industry"
+                    value={form.industry}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="1-10">1-10 users</option>
-                    <option value="11-25">11-25 users</option>
-                    <option value="26-50">26-50 users</option>
-                    <option value="51-100">51-100 users</option>
-                    <option value="100+">100+ users</option>
-                  </select>
+                    placeholder="e.g., Technology, Healthcare, Education"
+                  />
                 </div>
-              </div>
-
-              {/* Industry */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Industry
-                </label>
-                <Input
-                  type="text"
-                  name="industry"
-                  value={form.industry}
-                  onChange={handleInputChange}
-                  placeholder="e.g., Technology, Healthcare, Education"
-                />
               </div>
 
               {/* Message Display */}

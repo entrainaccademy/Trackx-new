@@ -17,8 +17,22 @@ export default function TeamLeaderLayout({
   const { organization, isLoaded: isOrgLoaded } = useOrganization();
   const { isAdmin, isLoading: isRoleLoading, appRole } = useClerkRole();
 
+  const isLoading = !isUserLoaded || !isOrgLoaded || isRoleLoading;
+
+  React.useEffect(() => {
+    if (isLoading) return;
+
+    if (!user) {
+      router.replace("/login");
+    } else if (!organization) {
+      router.replace("/onboarding");
+    } else if (!isAdmin) {
+      router.replace("/junior-leader");
+    }
+  }, [isLoading, user, organization, isAdmin, router]);
+
   // Wait for Clerk to load
-  if (!isUserLoaded || !isOrgLoaded || isRoleLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-600">
         <div className="text-center">
@@ -31,7 +45,6 @@ export default function TeamLeaderLayout({
 
   // Not logged in - redirect to login
   if (!user) {
-    router.replace("/login");
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-600">
         Redirecting to login...
@@ -41,7 +54,6 @@ export default function TeamLeaderLayout({
 
   // No organization - redirect to onboarding
   if (!organization) {
-    router.replace("/onboarding");
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-600">
         Setting up your account...
@@ -51,7 +63,6 @@ export default function TeamLeaderLayout({
 
   // User is not an admin (teamleader) - redirect to junior-leader
   if (!isAdmin) {
-    router.replace("/junior-leader");
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-600">
         Redirecting to your dashboard...
