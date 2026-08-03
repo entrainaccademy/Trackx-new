@@ -7,7 +7,7 @@ import { getTenantIdFromOrgSlug } from "@/lib/clerkOrganization";
 interface TenantMetadata {
   contactName?: string;
   email?: string;
-  phone?: string;
+  staffCount?: number;
   expectedUsers?: string;
   industry?: string;
   onboardingDate?: string;

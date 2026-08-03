@@ -235,9 +235,9 @@ export default function AdminTenantsPage() {
                         <div className="text-sm text-gray-500">
                           {tenant.metadata?.email || "N/A"}
                         </div>
-                        {tenant.metadata?.phone && (
-                          <div className="text-sm text-gray-500">
-                            {tenant.metadata.phone}
+                        {tenant.metadata?.staffCount !== undefined && (
+                          <div className="text-sm text-gray-500 font-medium">
+                            Staff Count: {tenant.metadata.staffCount}
                           </div>
                         )}
                       </td>
