@@ -1,5 +1,5 @@
 import { db } from "@/db/client";
-import { leads, tasks } from "@/db/schema";
+import { leads, tasks, users } from "@/db/schema";
 import { gte, sql, eq, and } from "drizzle-orm";
 import { getTenantContextFromRequest } from "@/lib/mongoTenant";
 import { authenticateRequest, createUnauthorizedResponse } from "@/lib/clerkAuth";
@@ -60,16 +60,24 @@ export async function GET(req: Request) {
         sql`${tasks.dueAt} < NOW() AND ${tasks.status} != 'DONE'`
       ));
 
+    // Get total team members for this tenant
+    const totalTeamMembersRow = await db
+      .select({ c: sql<number>`count(*)` })
+      .from(users)
+      .where(eq(users.tenantId, tenantId));
+
     const totalLeads = Number((totalLeadsRow[0] as any)?.c || 0);
     const qualifiedLeads = Number((qualifiedLeadsRow[0] as any)?.c || 0);
     const qualifiedRate = totalLeads > 0 ? Math.round((qualifiedLeads / totalLeads) * 100) : 0;
+    const totalTeamMembers = Number((totalTeamMembersRow[0] as any)?.c || 0);
 
     const response = NextResponse.json({ 
       success: true, 
       widgets: { 
         slaAtRisk: Number((overdueTasksRow[0] as any)?.c || 0), 
         leadsToday: Number((leadsTodayRow[0] as any)?.c || 0), 
-        qualifiedRate: qualifiedRate 
+        qualifiedRate: qualifiedRate,
+        totalTeamMembers: totalTeamMembers
       } 
     });
 

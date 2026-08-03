@@ -136,7 +136,16 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(leadEvents.at))
       .limit(limit);
 
-    const items = rows.map((r: any) => {
+    const seenIds = new Set<any>();
+    const uniqueRows: any[] = [];
+    for (const r of rows) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        uniqueRows.push(r);
+      }
+    }
+
+    const items = uniqueRows.map((r: any) => {
       const summary = summarizeEvent(r, r.leadName, nameByCode);
       return {
         id: r.id,

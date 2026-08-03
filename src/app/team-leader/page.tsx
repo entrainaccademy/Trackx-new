@@ -34,7 +34,7 @@ interface Analytics {
 
 export default function LeadManagementOverviewPage() {
   const { user, isLoaded } = useUser();
-  const [widgets, setWidgets] = useState<{ slaAtRisk: number; leadsToday: number; qualifiedRate: number } | null>(null);
+  const [widgets, setWidgets] = useState<{ slaAtRisk: number; leadsToday: number; qualifiedRate: number; totalTeamMembers?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<Array<{ id: number; at: string; title: string; detail: string; color: string }>>([]);
   const [showAllActivities, setShowAllActivities] = useState(false);
@@ -47,89 +47,132 @@ export default function LeadManagementOverviewPage() {
   useEffect(() => {
     if (!isLoaded) return;
 
-    // Fetch lead management overview
-    fetch("/api/tl/overview")
-      .then((r) => r.json())
-      .then((d) => setWidgets(d.widgets || { slaAtRisk: 0, leadsToday: 0, qualifiedRate: 0 }))
-      .catch((error) => {
-        console.error('Failed to fetch overview:', error);
-        setWidgets({ slaAtRisk: 0, leadsToday: 0, qualifiedRate: 0 });
-      });
+    let isCancelled = false;
 
-    // Fetch sales analytics
-    fetch("/api/analytics")
-      .then((r) => r.json())
-      .then((data) => {
-        // Ensure data is an array
-        if (Array.isArray(data)) {
-          setAnalytics(data);
+    const loadData = async () => {
+      // 1. Fetch overview
+      try {
+        const res = await fetch("/api/tl/overview");
+        if (res.ok) {
+          const d = await res.json();
+          if (!isCancelled) {
+            setWidgets(d.widgets || { slaAtRisk: 0, leadsToday: 0, qualifiedRate: 0 });
+          }
         } else {
-          console.error('Analytics data is not an array:', data);
+          if (!isCancelled) {
+            setWidgets({ slaAtRisk: 0, leadsToday: 0, qualifiedRate: 0 });
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch overview:", error);
+        if (!isCancelled) {
+          setWidgets({ slaAtRisk: 0, leadsToday: 0, qualifiedRate: 0 });
+        }
+      }
+
+      // 2. Fetch sales analytics
+      try {
+        const res = await fetch("/api/analytics");
+        if (res.ok) {
+          const data = await res.json();
+          if (!isCancelled) {
+            if (Array.isArray(data)) {
+              setAnalytics(data);
+            } else {
+              console.error("Analytics data is not an array:", data);
+              setAnalytics([]);
+            }
+          }
+        } else {
+          if (!isCancelled) {
+            setAnalytics([]);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch analytics:", error);
+        if (!isCancelled) {
           setAnalytics([]);
         }
-      })
-      .catch((error) => {
-        console.error('Failed to fetch analytics:', error);
-        setAnalytics([]);
-      })
-      .finally(() => setLoading(false));
-
-    // Fetch today's sales for leaderboard (use public endpoint to get all team sales)
-    fetch("/api/public/leaderboard")
-      .then((r) => r.json())
-      .then((data) => {
-        const sales: Sale[] = Array.isArray(data) ? data : [];
-        const today = new Date();
-        const targetDay = today.toISOString().split('T')[0];
-        const todaySales = sales.filter(sale => {
-          if (!sale.createdAt) return false;
-          const saleDay = new Date(sale.createdAt).toISOString().split('T')[0];
-          return saleDay === targetDay;
-        });
-
-        // Build leaderboard
-        const leaderboard: Record<string, { name: string; total: number; count: number }> = {};
-        for (const sale of todaySales) {
-          if (!leaderboard[sale.ogaName]) {
-            leaderboard[sale.ogaName] = { name: sale.ogaName, total: 0, count: 0 };
-          }
-          leaderboard[sale.ogaName].total += Number(sale.amount);
-          if (((sale.newAdmission ?? '') + '').trim().toLowerCase() === 'yes') {
-            leaderboard[sale.ogaName].count += 1;
-          }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
         }
-        
-        const sortedLeaderboard = Object.values(leaderboard)
-          .sort((a, b) => b.total - a.total)
-          .slice(0, 3);
-        
-        setTodayLeaderboard(sortedLeaderboard);
-      })
-      .catch((error) => {
-        console.error('Failed to fetch leaderboard:', error);
-        setTodayLeaderboard([]);
-      });
-  }, []);
+      }
 
-  useEffect(() => {
-    fetch("/api/tl/activity?limit=20")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d?.success && Array.isArray(d.items)) {
-          setActivities(
-            d.items.map((it: any) => ({
-              id: it.id,
-              at: it.at,
-              title: it.title,
-              detail: it.detail,
-              color: it.color || "indigo",
-            }))
-          );
+      // 3. Fetch today's sales for leaderboard
+      try {
+        const res = await fetch("/api/public/leaderboard");
+        if (res.ok) {
+          const data = await res.json();
+          if (!isCancelled) {
+            const sales: Sale[] = Array.isArray(data) ? data : [];
+            const today = new Date();
+            const targetDay = today.toISOString().split("T")[0];
+            const todaySales = sales.filter((sale) => {
+              if (!sale.createdAt) return false;
+              const saleDay = new Date(sale.createdAt).toISOString().split("T")[0];
+              return saleDay === targetDay;
+            });
+
+            const leaderboard: Record<string, { name: string; total: number; count: number }> = {};
+            for (const sale of todaySales) {
+              if (!leaderboard[sale.ogaName]) {
+                leaderboard[sale.ogaName] = { name: sale.ogaName, total: 0, count: 0 };
+              }
+              leaderboard[sale.ogaName].total += Number(sale.amount);
+              if (((sale.newAdmission ?? "") + "").trim().toLowerCase() === "yes") {
+                leaderboard[sale.ogaName].count += 1;
+              }
+            }
+
+            const sortedLeaderboard = Object.values(leaderboard)
+              .sort((a, b) => b.total - a.total)
+              .slice(0, 3);
+
+            setTodayLeaderboard(sortedLeaderboard);
+          }
         } else {
-          setActivities([]);
+          if (!isCancelled) setTodayLeaderboard([]);
         }
-      })
-      .catch(() => setActivities([]));
+      } catch (error) {
+        console.error("Failed to fetch leaderboard:", error);
+        if (!isCancelled) setTodayLeaderboard([]);
+      }
+
+      // 4. Fetch activity
+      try {
+        const res = await fetch("/api/tl/activity?limit=20");
+        if (res.ok) {
+          const d = await res.json();
+          if (!isCancelled) {
+            if (d?.success && Array.isArray(d.items)) {
+              setActivities(
+                d.items.map((it: any) => ({
+                  id: it.id,
+                  at: it.at,
+                  title: it.title,
+                  detail: it.detail,
+                  color: it.color || "indigo",
+                }))
+              );
+            } else {
+              setActivities([]);
+            }
+          }
+        } else {
+          if (!isCancelled) setActivities([]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch activity:", error);
+        if (!isCancelled) setActivities([]);
+      }
+    };
+
+    loadData();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [isLoaded]);
 
   // Calculate sales metrics (with safe fallbacks)
@@ -213,7 +256,7 @@ export default function LeadManagementOverviewPage() {
               </div>
               <div className="ml-3">
                 <p className="text-xs font-medium text-slate-600">Team Members</p>
-                <p className="text-2xl font-bold text-slate-900">{loading ? "..." : analytics.length}</p>
+                <p className="text-2xl font-bold text-slate-900">{loading ? "..." : (widgets?.totalTeamMembers ?? analytics.length)}</p>
               </div>
             </div>
           </CardContent>
@@ -562,7 +605,7 @@ export default function LeadManagementOverviewPage() {
                   const badge = badges[index];
                   
                   return (
-                    <div key={seller.name} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+                    <div key={`${seller.name}-${index}`} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
                       <div className="flex items-center gap-2.5 flex-1 min-w-0">
                         <Badge variant="outline" className={`${badge.color} font-bold text-[10px] px-1.5`}>
                           {badge.icon} #{index + 1}
@@ -596,8 +639,8 @@ export default function LeadManagementOverviewPage() {
                 <div className="text-xs text-slate-500 text-center py-4">No recent activity</div>
               ) : (
                 <>
-                  {(showAllActivities ? activities : activities.slice(0, 3)).map((a) => (
-                    <div key={a.id} className="flex items-start gap-2.5 p-2.5 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+                  {(showAllActivities ? activities : activities.slice(0, 3)).map((a, idx) => (
+                    <div key={`${a.id}-${idx}`} className="flex items-start gap-2.5 p-2.5 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
                       <div className={`w-2 h-2 rounded-full ${dotColor(a.color)} mt-1.5 flex-shrink-0`}></div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs">
