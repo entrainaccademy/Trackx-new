@@ -43,16 +43,36 @@ export function getBaseDomain(): string {
  * @returns Full URL to tenant subdomain
  */
 export function getTenantUrl(subdomain: string, path: string = '/team-leader'): string {
-  if (!subdomain) {
-    throw new Error('Subdomain is required');
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname.toLowerCase();
+    const port = window.location.port ? `:${window.location.port}` : '';
+    const protocol = window.location.protocol;
+
+    // Localhost development
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost')) {
+      return `${protocol}//localhost${port}${path}`;
+    }
+
+    // Vercel preview/app domains (*.vercel.app)
+    if (hostname.endsWith('.vercel.app')) {
+      return `${protocol}//${window.location.host}${path}`;
+    }
+
+    // Custom production domain with wildcard DNS (wydex.co)
+    if (subdomain && hostname.includes('wydex.co')) {
+      return `${protocol}//${subdomain}.wydex.co${path}`;
+    }
+
+    // Fallback to current host
+    return `${protocol}//${window.location.host}${path}`;
   }
 
-  if (isLocalhost()) {
-    const port = typeof window !== 'undefined' ? window.location.port : '3000';
-    return `http://${subdomain}.localhost:${port}${path}`;
+  // Server-side fallback
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return `${process.env.NEXT_PUBLIC_APP_URL}${path}`;
   }
 
-  return `https://${subdomain}.wydex.co${path}`;
+  return path;
 }
 
 /**
