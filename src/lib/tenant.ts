@@ -37,16 +37,36 @@ export async function getTenantLogo(subdomain: string): Promise<string | null> {
 export async function requireTenantIdFromRequest(req: Request): Promise<number> {
   const subdomain = req.headers.get("x-tenant-subdomain");
 
-  if (subdomain) {
+  if (subdomain && subdomain !== "www") {
     const tenant = await getTenantBySubdomain(subdomain);
     if (tenant?.id) return tenant.id as number;
   }
 
-  // Check Clerk auth for org info
+  // Check Clerk auth for user email or org info
   let authResult: any = null;
   try {
     authResult = await auth();
   } catch {}
+
+  if (authResult?.userId) {
+    try {
+      const { currentUser } = await import("@clerk/nextjs/server");
+      const { users } = await import("@/db/schema");
+      const clerkUser = await currentUser();
+      const email = clerkUser?.emailAddresses?.[0]?.emailAddress;
+      if (email) {
+        const userRows = await db
+          .select({ tenantId: users.tenantId })
+          .from(users)
+          .where(eq(users.email, email))
+          .limit(1);
+
+        if (userRows.length > 0 && userRows[0]?.tenantId) {
+          return userRows[0].tenantId as number;
+        }
+      }
+    } catch {}
+  }
 
   const targetSlug = subdomain || authResult?.orgSlug;
   const orgId = authResult?.orgId || (subdomain ? `org_${subdomain}` : undefined);

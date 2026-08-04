@@ -71,6 +71,8 @@ export async function GET(req: Request) {
     const qualifiedRate = totalLeads > 0 ? Math.round((qualifiedLeads / totalLeads) * 100) : 0;
     const totalTeamMembers = Number((totalTeamMembersRow[0] as any)?.c || 0);
 
+    console.log(`[OverviewAPI] Resolved tenantId: ${tenantId}, totalTeamMembers: ${totalTeamMembers}`);
+
     const response = NextResponse.json({ 
       success: true, 
       widgets: { 

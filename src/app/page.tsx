@@ -75,8 +75,20 @@ function useTenant() {
         return;
       }
       
-    // Production domains: thetrackx.com, *.thetrackx.com
-      const parts = hostname.split(".");
+    // Handle platform app domains (*.vercel.app, etc.)
+    const platformSuffixes = [".vercel.app", ".now.sh", ".netlify.app", ".onrender.com", ".ngrok-free.app", ".ngrok.io", ".loca.lt"];
+    for (const suffix of platformSuffixes) {
+      if (hostname.endsWith(suffix)) {
+        const parts = hostname.split(".");
+        const hasSub = parts.length > 3 && parts[0] !== "www";
+        setSubdomain(hasSub ? parts[0] : null);
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Production domains: standard custom domains
+    const parts = hostname.split(".");
     const hasSub = parts.length > 2 && parts[0] !== "www";
     setSubdomain(hasSub ? parts[0] : null);
     setLoading(false);

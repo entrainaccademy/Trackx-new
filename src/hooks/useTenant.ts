@@ -23,18 +23,36 @@ export function useTenant() {
           }
         } else {
           // Production environment
-          const parts = hostname.split(".");
-          if (parts.length <= 2) {
-            // example.com → no subdomain
-            setSubdomain(null);
-          } else {
-            // For multi-level domains like tenant.wydex.co, take the left-most label as subdomain
-            const potentialSubdomain = parts[0];
-            // Treat 'www' as main domain (not a tenant)
-            if (potentialSubdomain === 'www') {
+          const platformSuffixes = [".vercel.app", ".now.sh", ".netlify.app", ".onrender.com", ".ngrok-free.app", ".ngrok.io", ".loca.lt"];
+          let isPlatform = false;
+          for (const suffix of platformSuffixes) {
+            if (hostname.endsWith(suffix)) {
+              isPlatform = true;
+              const parts = hostname.split(".");
+              if (parts.length <= 3) {
+                setSubdomain(null);
+              } else {
+                const potentialSubdomain = parts[0];
+                setSubdomain(potentialSubdomain && potentialSubdomain !== 'www' ? potentialSubdomain : null);
+              }
+              break;
+            }
+          }
+
+          if (!isPlatform) {
+            const parts = hostname.split(".");
+            if (parts.length <= 2) {
+              // example.com → no subdomain
               setSubdomain(null);
             } else {
-              setSubdomain(potentialSubdomain || null);
+              // For multi-level domains like tenant.wydex.co, take the left-most label as subdomain
+              const potentialSubdomain = parts[0];
+              // Treat 'www' as main domain (not a tenant)
+              if (potentialSubdomain === 'www') {
+                setSubdomain(null);
+              } else {
+                setSubdomain(potentialSubdomain || null);
+              }
             }
           }
         }

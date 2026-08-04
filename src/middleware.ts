@@ -7,12 +7,26 @@ function extractSubdomain(host?: string | null): string | null {
   // Handle IPs
   if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null;
   // Handle localhost and *.localhost during development
-  if (hostname === "localhost") return null;
+  if (hostname === "localhost" || hostname === "127.0.0.1") return null;
   if (hostname.endsWith(".localhost")) {
     const left = hostname.slice(0, -".localhost".length);
     const label = left.split(".")[0];
-    return label || null;
+    return label && label !== "localhost" && label !== "www" ? label : null;
   }
+
+  // Handle platform app domains (e.g. *.vercel.app, *.now.sh, *.netlify.app, *.onrender.com, *.ngrok-free.app, *.ngrok.io, *.loca.lt)
+  const platformSuffixes = [".vercel.app", ".now.sh", ".netlify.app", ".onrender.com", ".ngrok-free.app", ".ngrok.io", ".loca.lt"];
+  for (const suffix of platformSuffixes) {
+    if (hostname.endsWith(suffix)) {
+      const parts = hostname.split(".");
+      // E.g. trackx-new.vercel.app has 3 parts. Platform root app domain has 3 labels -> return null.
+      // E.g. tenant1.trackx-new.vercel.app has 4 parts -> return "tenant1".
+      if (parts.length <= 3) return null;
+      const potentialSubdomain = parts[0];
+      return potentialSubdomain && potentialSubdomain !== 'www' ? potentialSubdomain : null;
+    }
+  }
+
   const parts = hostname.split(".");
   if (parts.length <= 2) return null; // example.com → no subdomain
   // For multi-level domains like app.staging.example.com take the left-most label as subdomain
