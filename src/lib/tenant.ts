@@ -48,22 +48,41 @@ export async function requireTenantIdFromRequest(req: Request): Promise<number> 
     authResult = await auth();
   } catch {}
 
+  let email: string | null = null;
+
   if (authResult?.userId) {
     try {
       const { currentUser } = await import("@clerk/nextjs/server");
-      const { users } = await import("@/db/schema");
       const clerkUser = await currentUser();
-      const email = clerkUser?.emailAddresses?.[0]?.emailAddress;
-      if (email) {
-        const userRows = await db
-          .select({ tenantId: users.tenantId })
-          .from(users)
-          .where(eq(users.email, email))
-          .limit(1);
+      email = clerkUser?.emailAddresses?.[0]?.emailAddress || null;
+    } catch {}
+  }
 
-        if (userRows.length > 0 && userRows[0]?.tenantId) {
-          return userRows[0].tenantId as number;
-        }
+  if (!email && req) {
+    try {
+      const cookieHeader = req.headers?.get?.("cookie") || "";
+      const match = cookieHeader.match(/trackx_user_email=([^;]+)/);
+      if (match && match[1]) {
+        email = decodeURIComponent(match[1]).trim();
+      }
+    } catch {}
+
+    if (!email) {
+      email = (req.headers?.get?.("x-user-email") || "").trim() || null;
+    }
+  }
+
+  if (email) {
+    try {
+      const { users } = await import("@/db/schema");
+      const userRows = await db
+        .select({ tenantId: users.tenantId })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+
+      if (userRows.length > 0 && userRows[0]?.tenantId) {
+        return userRows[0].tenantId as number;
       }
     } catch {}
   }

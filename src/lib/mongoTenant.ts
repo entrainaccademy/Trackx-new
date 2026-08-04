@@ -22,43 +22,66 @@ export async function getTenantContextFromRequest(req: Request): Promise<TenantC
     } catch {}
   }
 
-  // 1. Resolve via Clerk Auth (User email lookup in DB or Org slug)
+  // 1. Resolve via Clerk Auth or Cookie Session (User email lookup in DB or Org slug)
   try {
-    const authResult = await auth();
-    
-    // First, check if logged in Clerk user has an assigned tenant in users table
-    if (authResult?.userId) {
-      try {
-        const clerkUser = await currentUser();
-        const email = clerkUser?.emailAddresses?.[0]?.emailAddress;
-        if (email) {
-          const userRows = await db
-            .select({ tenantId: users.tenantId })
-            .from(users)
-            .where(eq(users.email, email))
-            .limit(1);
+    let authEmail: string | null = null;
+    let authOrgSlug: string | null = null;
+    let authOrgId: string | null = null;
 
-          if (userRows.length > 0 && userRows[0]?.tenantId) {
-            const resolvedTenantId = userRows[0].tenantId;
-            console.log(`[TenantContext] Resolved tenantId ${resolvedTenantId} via user email in DB`);
-            return { tenantSubdomain: sub || authResult.orgSlug || "", tenantId: resolvedTenantId };
-          }
+    try {
+      const authResult = await auth();
+      if (authResult?.userId) {
+        const clerkUser = await currentUser();
+        authEmail = clerkUser?.emailAddresses?.[0]?.emailAddress || null;
+        authOrgSlug = authResult.orgSlug || null;
+        authOrgId = authResult.orgId || null;
+      }
+    } catch {}
+
+    // Fallback email from cookie / header for credential login
+    if (!authEmail && req) {
+      try {
+        const cookieHeader = req.headers?.get?.("cookie") || "";
+        const match = cookieHeader.match(/trackx_user_email=([^;]+)/);
+        if (match && match[1]) {
+          authEmail = decodeURIComponent(match[1]).trim();
+        }
+      } catch {}
+
+      if (!authEmail) {
+        authEmail = (req.headers?.get?.("x-user-email") || "").trim() || null;
+      }
+    }
+
+    // Check if user email has an assigned tenant in users table
+    if (authEmail) {
+      try {
+        const userRows = await db
+          .select({ tenantId: users.tenantId })
+          .from(users)
+          .where(eq(users.email, authEmail))
+          .limit(1);
+
+        if (userRows.length > 0 && userRows[0]?.tenantId) {
+          const resolvedTenantId = userRows[0].tenantId;
+          console.log(`[TenantContext] Resolved tenantId ${resolvedTenantId} via user email in DB: ${authEmail}`);
+          return { tenantSubdomain: sub || authOrgSlug || "", tenantId: resolvedTenantId };
         }
       } catch (err: any) {
         console.warn(`[TenantContext] User email lookup failed: ${err?.message}`);
       }
     }
 
-    // Second, resolve via Clerk Org slug if present
-    if (authResult?.orgSlug && authResult?.orgId) {
-      const tenantId = await getTenantIdFromOrgSlug(authResult.orgSlug, authResult.orgId);
+    // Resolve via Clerk Org slug if present
+    if (authOrgSlug && authOrgId) {
+      const tenantId = await getTenantIdFromOrgSlug(authOrgSlug, authOrgId);
       if (tenantId) {
         console.log(`[TenantContext] Resolved tenantId ${tenantId} via orgSlug`);
-        return { tenantSubdomain: authResult.orgSlug, tenantId };
+        return { tenantSubdomain: authOrgSlug, tenantId };
       }
     }
   } catch (err: any) {
-    console.warn(`[TenantContext] Clerk auth lookup failed: ${err?.message}`);
+    console.warn(`[TenantContext] Tenant resolution error: ${err?.message}`);
   }
 
   // 2. Fallback to default tenant for dev / single-tenant setup

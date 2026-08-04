@@ -33,37 +33,89 @@ export interface ClerkAuthResult {
  */
 export async function authenticateRequest(request?: NextRequest | Request): Promise<ClerkAuthResult> {
   try {
-    const authResult = await auth();
-    
-    if (!authResult || !authResult.userId) {
+    let clerkUserId: string | undefined;
+    let clerkEmail: string | undefined;
+    let orgId: string | null = null;
+    let orgSlug: string | null = null;
+    let orgRole: string | null = null;
+
+    try {
+      const authResult = await auth();
+      if (authResult?.userId) {
+        clerkUserId = authResult.userId;
+        orgId = authResult.orgId || null;
+        orgSlug = authResult.orgSlug || null;
+        orgRole = authResult.orgRole || null;
+
+        const user = await currentUser();
+        clerkEmail = user?.emailAddresses[0]?.emailAddress;
+      }
+    } catch {}
+
+    // If authenticated via Clerk
+    if (clerkUserId && clerkEmail) {
+      const appRole = orgRole ? CLERK_TO_APP_ROLE[orgRole] || "sales" : null;
+      const isAdmin = orgRole === "org:admin" || orgRole === "Admin" || orgRole === "admin";
+      
       return {
-        success: false,
-        error: 'Unauthorized',
-        statusCode: 401
+        success: true,
+        userId: clerkUserId,
+        email: clerkEmail,
+        orgId: orgId || undefined,
+        orgSlug: orgSlug || undefined,
+        orgRole: orgRole || undefined,
+        appRole: appRole || undefined,
+        isAdmin
       };
     }
 
-    const user = await currentUser();
-    const email = user?.emailAddresses[0]?.emailAddress;
-    
-    // Get organization role info
-    const orgId = authResult.orgId || null;
-    const orgSlug = authResult.orgSlug || null;
-    const orgRole = authResult.orgRole || null;
-    
-    // Map Clerk role to app role
-    const appRole = orgRole ? CLERK_TO_APP_ROLE[orgRole] || "sales" : null;
-    const isAdmin = orgRole === "org:admin" || orgRole === "Admin" || orgRole === "admin";
-    
+    // Fallback: Check for credential login session via cookies or headers
+    let cookieEmail: string | null = null;
+    if (request) {
+      try {
+        const cookieHeader = request.headers.get("cookie") || "";
+        const match = cookieHeader.match(/trackx_user_email=([^;]+)/);
+        if (match && match[1]) {
+          cookieEmail = decodeURIComponent(match[1]).trim();
+        }
+      } catch {}
+
+      if (!cookieEmail) {
+        cookieEmail = (request.headers.get("x-user-email") || "").trim() || null;
+      }
+    }
+
+    if (cookieEmail) {
+      const { db } = await import("@/db/client");
+      const { users } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const userRows = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, cookieEmail))
+        .limit(1);
+
+      if (userRows.length > 0) {
+        const u = userRows[0];
+        const roleLower = String(u.role || "").toLowerCase();
+        const isAdmin = roleLower === "teamleader" || roleLower === "ceo" || roleLower === "admin" || roleLower === "owner";
+        const appRole = isAdmin ? "teamleader" : (roleLower === "jl" || roleLower === "juniorleader" ? "jl" : "sales");
+
+        return {
+          success: true,
+          userId: `db_${u.id}`,
+          email: u.email,
+          appRole,
+          isAdmin
+        };
+      }
+    }
+
     return {
-      success: true,
-      userId: authResult.userId,
-      email,
-      orgId: orgId || undefined,
-      orgSlug: orgSlug || undefined,
-      orgRole: orgRole || undefined,
-      appRole: appRole || undefined,
-      isAdmin
+      success: false,
+      error: 'Unauthorized',
+      statusCode: 401
     };
   } catch (error) {
     console.error('Clerk authentication error:', error);
