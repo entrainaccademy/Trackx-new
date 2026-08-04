@@ -82,7 +82,7 @@ export default function TeamMemberLoginForm() {
       if (role === "jl" || role === "juniorleader") {
         targetPath = "/junior-leader";
       } else if (role === "teamleader" || role === "ceo" || role === "admin") {
-        targetPath = "/team-leader/team-management";
+        targetPath = "/team-leader";
       } else {
         // Regular team member / sales executive -> Team Member Separate Page
         targetPath = "/team-member";

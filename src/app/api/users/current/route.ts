@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/client';
-import { users } from '@/db/schema';
+import { tenants, users } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getTenantContextFromRequest } from '@/lib/mongoTenant';
 import { authenticateRequest, createUnauthorizedResponse } from '@/lib/clerkAuth';
@@ -38,8 +38,10 @@ export async function GET(request: NextRequest) {
           tenantId: users.tenantId,
           createdAt: users.createdAt,
           updatedAt: users.updatedAt,
+          tenantSubdomain: tenants.subdomain,
         })
         .from(users)
+        .leftJoin(tenants, eq(users.tenantId, tenants.id))
         .where(and(
           eq(users.email, email),
           eq(users.tenantId, tenantId)
@@ -57,8 +59,10 @@ export async function GET(request: NextRequest) {
           tenantId: users.tenantId,
           createdAt: users.createdAt,
           updatedAt: users.updatedAt,
+          tenantSubdomain: tenants.subdomain,
         })
         .from(users)
+        .leftJoin(tenants, eq(users.tenantId, tenants.id))
         .where(eq(users.email, email))
         .limit(1);
     }

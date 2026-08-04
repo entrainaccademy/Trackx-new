@@ -85,8 +85,6 @@ export default function LoginPage() {
                 routing="path"
                 path="/login"
                 signUpUrl="/signup"
-                afterSignInUrl="/auth-redirect"
-                redirectUrl="/auth-redirect"
                 forceRedirectUrl="/auth-redirect"
               />
             </div>

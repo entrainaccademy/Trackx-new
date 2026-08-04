@@ -31,42 +31,54 @@ export default function LoginRedirectPage() {
         return;
       }
 
-      // No organization - redirect to onboarding
-      if (!organization || !membership) {
-        console.log("No organization found, redirecting to onboarding");
+      // 1. Fetch user record from database
+      let dbUser: any = null;
+      try {
+        const userEmail = user.emailAddresses[0]?.emailAddress;
+        if (userEmail) {
+          const emailStr = String(userEmail);
+          const res = await fetch(`/api/users/current?identifier=${encodeURIComponent(emailStr)}`, {
+            method: 'GET',
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.success && data?.user) {
+              dbUser = data.user;
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error ensuring user exists in database:", error);
+      }
+
+      // 2. Determine role from DB or Clerk membership
+      const clerkRole = membership?.role;
+      const appRole = clerkRole ? (CLERK_TO_APP_ROLE[clerkRole] || "sales") : null;
+      let isAdmin = clerkRole === "org:admin" || clerkRole === "Admin" || clerkRole === "admin";
+
+      if (dbUser && dbUser.role) {
+        const roleLower = String(dbUser.role).toLowerCase();
+        if (roleLower === "teamleader" || roleLower === "admin" || roleLower === "ceo") {
+          isAdmin = true;
+        }
+      }
+
+      // 3. Get organization slug for tenant subdomain from Clerk org or DB user
+      const organizationSlug = organization?.slug || dbUser?.tenantSubdomain;
+
+      // No organization and no DB user -> redirect to onboarding
+      if (!organization && !membership && !dbUser && !organizationSlug) {
+        console.log("No organization or user record found, redirecting to onboarding");
         hasRedirected.current = true;
         router.push("/onboarding");
         return;
       }
 
-      // Get user's role in the organization
-      const clerkRole = membership.role;
-      const appRole = CLERK_TO_APP_ROLE[clerkRole] || "sales";
-      const isAdmin = clerkRole === "org:admin" || clerkRole === "Admin" || clerkRole === "admin";
-      
-      // Ensure user exists in database (create if needed)
-      // This happens automatically via the API endpoints, but we can trigger it here
-      try {
-        const userEmail = user.emailAddresses[0]?.emailAddress;
-        if (userEmail) {
-          // This will auto-create the user if they don't exist
-          const emailStr = String(userEmail);
-          await fetch(`/api/users/current?identifier=${encodeURIComponent(emailStr)}`, {
-            method: 'GET',
-          });
-        }
-      } catch (error) {
-        console.error("Error ensuring user exists in database:", error);
-        // Continue anyway - APIs will create user on first access
-      }
-      
       // Determine dashboard path based on role
       // Admin (teamleader) → /team-leader
       // Member (salesExecutive/salesperson) → /team-member
       const path = isAdmin ? "/team-leader" : "/team-member";
       
-      // Get organization slug for tenant subdomain
-      const organizationSlug = organization.slug;
       if (!organizationSlug) {
         console.error("Organization slug not found, redirecting to onboarding");
         hasRedirected.current = true;
@@ -81,6 +93,7 @@ export default function LoginRedirectPage() {
         organizationSlug,
         clerkRole,
         appRole,
+        dbUserRole: dbUser?.role,
         isAdmin,
         path,
         redirectUrl,

@@ -15,29 +15,31 @@ export default function TeamLeaderLayout({
   const pathname = usePathname();
   const { user, isLoaded: isUserLoaded } = useUser();
   const { organization, isLoaded: isOrgLoaded } = useOrganization();
-  const { isAdmin, isLoading: isRoleLoading, appRole } = useClerkRole();
+  const { isAdmin, isLoading: isRoleLoading, appRole, organizationSlug, organizationName } = useClerkRole();
 
-  const isLoading = !isUserLoaded || !isOrgLoaded || isRoleLoading;
+  const isLoading = !isUserLoaded || isRoleLoading;
 
   React.useEffect(() => {
     if (isLoading) return;
 
     if (!user) {
       router.replace("/login");
-    } else if (!organization) {
-      router.replace("/onboarding");
     } else if (!isAdmin) {
-      router.replace("/junior-leader");
+      if (appRole === "jl") {
+        router.replace("/junior-leader");
+      } else {
+        router.replace("/team-member");
+      }
     }
-  }, [isLoading, user, organization, isAdmin, router]);
+  }, [isLoading, user, isAdmin, appRole, router]);
 
-  // Wait for Clerk to load
+  // Wait for Clerk and Role verification to load
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-600">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-          <p>Loading...</p>
+          <p>Loading your dashboard...</p>
         </div>
       </div>
     );
@@ -52,16 +54,7 @@ export default function TeamLeaderLayout({
     );
   }
 
-  // No organization - redirect to onboarding
-  if (!organization) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-slate-600">
-        Setting up your account...
-      </div>
-    );
-  }
-
-  // User is not an admin (teamleader) - redirect to junior-leader
+  // User is not an admin (teamleader / CEO) - redirect to dashboard
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center text-slate-600">
@@ -76,8 +69,8 @@ export default function TeamLeaderLayout({
     code: user.emailAddresses[0]?.emailAddress || "",
     email: user.emailAddresses[0]?.emailAddress || "",
     role: "teamleader",
-    organizationName: organization.name,
-    organizationSlug: organization.slug || undefined,
+    organizationName: organizationName || organization?.name || "Organization",
+    organizationSlug: organizationSlug || organization?.slug || undefined,
   };
 
   return (
