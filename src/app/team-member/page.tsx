@@ -6,7 +6,7 @@ import { useUser, useClerk } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { 
   User, DollarSign, Target, Award, LogOut, TrendingUp, 
-  PhoneCall, CheckCircle, Calendar, Plus, RefreshCw, Layers, Users,
+  PhoneCall, CheckCircle, Calendar, RefreshCw, Users,
   Search, Edit3, MessageSquare, Clock, Filter, Eye, AlertTriangle, ClipboardList
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,8 +63,15 @@ interface TeamMemberData {
     target: number;
     targetProgress: number;
   };
+  workStats: {
+    openTasks: number;
+    followupsToday: number;
+    overdueTasks: number;
+    highPriorityTasks: number;
+  };
   sales: Sale[];
   assignedLeads: AssignedLead[];
+  tasks: MemberTask[];
 }
 
 interface MemberTask {
@@ -98,8 +105,7 @@ export default function TeamMemberPage() {
 
   const [data, setData] = useState<TeamMemberData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [memberTasks, setMemberTasks] = useState<MemberTask[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [leadSearch, setLeadSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
 
@@ -114,25 +120,15 @@ export default function TeamMemberPage() {
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
-  // Add Sale Modal state
-  const [showAddSale, setShowAddSale] = useState(false);
-  const [isAddingSale, setIsAddingSale] = useState(false);
-  const [newSale, setNewSale] = useState({
-    customerName: "",
-    customerPhone: "",
-    amount: "",
-    courseName: "",
-    newAdmission: "Yes"
-  });
-
   useEffect(() => {
     if (!isLoaded) return;
     fetchTeamMemberData();
   }, [isLoaded, clerkUser]);
 
-  const fetchTeamMemberData = async () => {
+  const fetchTeamMemberData = async (showFullLoader = true) => {
     try {
-      setLoading(true);
+      if (showFullLoader) setLoading(true);
+      else setRefreshing(true);
       const email =
         clerkUser?.emailAddresses[0]?.emailAddress ||
         (typeof window !== "undefined" ? localStorage.getItem("trackx_user_email") : null);
@@ -144,7 +140,6 @@ export default function TeamMemberPage() {
         const result = await response.json();
         if (result.success) {
           setData(result);
-          await fetchMemberTasks(result.profile);
           return;
         }
       }
@@ -154,32 +149,8 @@ export default function TeamMemberPage() {
       console.error("Error fetching team member data:", err);
       toast.error("Error connecting to server");
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchMemberTasks = async (profile: UserProfile) => {
-    setTasksLoading(true);
-    try {
-      const ownerIds = Array.from(new Set([profile.email, profile.code].filter(Boolean)));
-      const responses = await Promise.all(
-        ownerIds.map((ownerId) =>
-          fetch(`/api/tasks/optimized?ownerId=${encodeURIComponent(ownerId)}&limit=100`)
-            .then((response) => (response.ok ? response.json() : null))
-        )
-      );
-
-      const uniqueTasks = new Map<number, MemberTask>();
-      responses.forEach((result) => {
-        if (!Array.isArray(result?.tasks)) return;
-        result.tasks.forEach((task: MemberTask) => uniqueTasks.set(task.id, task));
-      });
-      setMemberTasks(Array.from(uniqueTasks.values()));
-    } catch (error) {
-      console.error("Error fetching team member tasks:", error);
-      setMemberTasks([]);
-    } finally {
-      setTasksLoading(false);
+      if (showFullLoader) setLoading(false);
+      else setRefreshing(false);
     }
   };
 
@@ -289,44 +260,6 @@ export default function TeamMemberPage() {
     }
   };
 
-  const handleAddSaleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newSale.customerName || !newSale.amount) {
-      toast.error("Customer name and amount are required");
-      return;
-    }
-
-    setIsAddingSale(true);
-    try {
-      const res = await fetch("/api/sales", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerName: newSale.customerName,
-          customerPhone: newSale.customerPhone || "N/A",
-          amount: parseFloat(newSale.amount),
-          courseName: newSale.courseName || "General",
-          newAdmission: newSale.newAdmission,
-          ogaName: data?.profile.name || clerkUser?.fullName || "Team Member"
-        }),
-      });
-
-      if (res.ok) {
-        toast.success("Sale recorded successfully!");
-        setShowAddSale(false);
-        setNewSale({ customerName: "", customerPhone: "", amount: "", courseName: "", newAdmission: "Yes" });
-        fetchTeamMemberData();
-      } else {
-        const errorData = await res.json();
-        toast.error(errorData.error || "Failed to record sale");
-      }
-    } catch (err) {
-      toast.error("Error submitting sale");
-    } finally {
-      setIsAddingSale(false);
-    }
-  };
-
   const handleLogout = async () => {
     try {
       if (typeof window !== "undefined") {
@@ -350,7 +283,7 @@ export default function TeamMemberPage() {
     startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date(startOfToday);
     endOfToday.setHours(23, 59, 59, 999);
-    const activeTasks = memberTasks.filter(
+    const activeTasks = (data?.tasks || []).filter(
       (task) => !task.completedAt && !["DONE", "SKIPPED"].includes(task.status?.toUpperCase())
     );
     const followUpsToday = activeTasks.filter((task) => {
@@ -374,7 +307,7 @@ export default function TeamMemberPage() {
       .slice(0, 4);
 
     return { activeTasks, followUpsToday, overdue, highPriority, urgentTasks, startOfToday };
-  }, [memberTasks]);
+  }, [data?.tasks]);
 
   if (loading) {
     return (
@@ -404,8 +337,13 @@ export default function TeamMemberPage() {
     targetProgress: 0
   };
 
-  const salesList = data?.sales || [];
   const rawLeadsList = data?.assignedLeads || [];
+  const workStats = data?.workStats || {
+    openTasks: 0,
+    followupsToday: 0,
+    overdueTasks: 0,
+    highPriorityTasks: 0,
+  };
 
   // Filter assigned leads by search term and stage filter
   const filteredLeads = rawLeadsList.filter((lead) => {
@@ -472,13 +410,6 @@ export default function TeamMemberPage() {
               Manage your assigned leads, log call activities, and record conversions.
             </p>
           </div>
-          <Button
-            onClick={() => setShowAddSale(true)}
-            className="bg-white text-emerald-800 hover:bg-emerald-50 font-semibold shadow-md gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Record New Sale
-          </Button>
         </div>
 
         {/* Metrics Grid */}
@@ -552,8 +483,8 @@ export default function TeamMemberPage() {
                 </CardTitle>
                 <p className="text-xs text-slate-500 mt-0.5">Tasks and follow-ups that need your attention</p>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => fetchMemberTasks(profile)} className="gap-1.5 text-xs text-slate-600">
-                <RefreshCw className={`w-3.5 h-3.5 ${tasksLoading ? "animate-spin" : ""}`} />
+              <Button variant="ghost" size="sm" disabled={refreshing} onClick={() => fetchTeamMemberData(false)} className="gap-1.5 text-xs text-slate-600">
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
             </div>
@@ -561,10 +492,10 @@ export default function TeamMemberPage() {
           <CardContent className="p-5">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
-                { label: "Open Tasks", value: workSummary.activeTasks.length, note: "Pending work", color: "blue" },
-                { label: "Follow-ups Today", value: workSummary.followUpsToday.length, note: "Due today", color: "amber" },
-                { label: "Overdue", value: workSummary.overdue.length, note: "Act immediately", color: "red" },
-                { label: "High Priority", value: workSummary.highPriority.length, note: "Important tasks", color: "violet" },
+                { label: "Open Tasks", value: workStats.openTasks, note: "Pending work", color: "blue" },
+                { label: "Follow-ups Today", value: workStats.followupsToday, note: "Due today", color: "amber" },
+                { label: "Overdue", value: workStats.overdueTasks, note: "Act immediately", color: "red" },
+                { label: "High Priority", value: workStats.highPriorityTasks, note: "Important tasks", color: "violet" },
               ].map((item) => {
                 const colors: Record<string, string> = {
                   blue: "bg-blue-50 border-blue-200 text-blue-700",
@@ -579,15 +510,14 @@ export default function TeamMemberPage() {
                         <p className="text-xs font-semibold">{item.label}</p>
                         <p className="text-[11px] opacity-70 mt-1">{item.note}</p>
                       </div>
-                      <span className="text-2xl font-bold leading-none">{tasksLoading ? "—" : item.value}</span>
+                      <span className="text-2xl font-bold leading-none">{item.value}</span>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {!tasksLoading && (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
                   <AlertTriangle className="w-4 h-4 text-amber-600" />
                   Needs Your Attention
@@ -632,8 +562,7 @@ export default function TeamMemberPage() {
                     })}
                   </div>
                 )}
-              </div>
-            )}
+            </div>
           </CardContent>
         </Card>
 
@@ -671,7 +600,7 @@ export default function TeamMemberPage() {
                   ))}
                 </select>
 
-                <Button variant="ghost" size="sm" onClick={fetchTeamMemberData} className="gap-1 text-xs text-slate-600 h-9">
+                <Button variant="ghost" size="sm" onClick={() => fetchTeamMemberData(false)} className="gap-1 text-xs text-slate-600 h-9">
                   <RefreshCw className="w-3.5 h-3.5" />
                 </Button>
               </div>
@@ -740,65 +669,6 @@ export default function TeamMemberPage() {
           </CardContent>
         </Card>
 
-        {/* My Conversions & Sales */}
-        <Card className="border border-slate-200/80 shadow-sm">
-          <CardHeader className="bg-slate-50/50 border-b border-slate-200/80 flex flex-row items-center justify-between py-4">
-            <div>
-              <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-600" />
-                My Conversions & Sales Log
-              </CardTitle>
-              <p className="text-xs text-slate-500 mt-0.5">Records of sales logged by you</p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={fetchTeamMemberData} className="gap-1.5 text-xs text-slate-600">
-              <RefreshCw className="w-3.5 h-3.5" />
-              Refresh Data
-            </Button>
-          </CardHeader>
-
-          <CardContent className="p-0">
-            {salesList.length === 0 ? (
-              <div className="text-center py-12">
-                <DollarSign className="w-12 h-12 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-slate-700">No sales recorded yet</p>
-                <p className="text-xs text-slate-500 mt-1">Click "Record New Sale" to add your first transaction</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <THead>
-                    <TR className="bg-slate-50 border-b border-slate-200">
-                      <TH className="text-xs text-slate-700">Customer Name</TH>
-                      <TH className="text-xs text-slate-700">Phone</TH>
-                      <TH className="text-xs text-slate-700">Course / Product</TH>
-                      <TH className="text-xs text-slate-700">New Admission</TH>
-                      <TH className="text-xs text-slate-700">Amount (₹)</TH>
-                      <TH className="text-xs text-slate-700 text-right">Date</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {salesList.map((sale, idx) => (
-                      <TR key={sale.id || sale._id || idx} className="border-b border-slate-100 hover:bg-slate-50/60">
-                        <TD className="font-semibold text-slate-900">{sale.customerName}</TD>
-                        <TD className="text-slate-600 text-xs font-mono">{sale.customerPhone || "N/A"}</TD>
-                        <TD className="text-slate-700 text-xs">{sale.courseName || "General"}</TD>
-                        <TD>
-                          <Badge variant="outline" className={sale.newAdmission === "Yes" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-700"}>
-                            {sale.newAdmission || "Yes"}
-                          </Badge>
-                        </TD>
-                        <TD className="font-bold text-emerald-700">₹{(sale.amount || 0).toLocaleString()}</TD>
-                        <TD className="text-right text-xs text-slate-500">
-                          {sale.createdAt ? new Date(sale.createdAt).toLocaleDateString() : "Today"}
-                        </TD>
-                      </TR>
-                    ))}
-                  </TBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </main>
 
       {/* Lead Details & Notes Modal */}
@@ -953,90 +823,6 @@ export default function TeamMemberPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Record Sale Modal */}
-      <Dialog open={showAddSale} onOpenChange={setShowAddSale}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Plus className="w-5 h-5 text-emerald-600" />
-              Record New Sale
-            </DialogTitle>
-          </DialogHeader>
-
-          <form onSubmit={handleAddSaleSubmit} className="space-y-4 pt-2">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Customer Full Name *</label>
-              <Input
-                type="text"
-                required
-                value={newSale.customerName}
-                onChange={(e) => setNewSale({ ...newSale, customerName: e.target.value })}
-                placeholder="e.g. Rahul Sharma"
-                className="border-slate-200"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Customer Phone</label>
-                <Input
-                  type="tel"
-                  value={newSale.customerPhone}
-                  onChange={(e) => setNewSale({ ...newSale, customerPhone: e.target.value })}
-                  placeholder="+91 9876543210"
-                  className="border-slate-200"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Amount (₹) *</label>
-                <Input
-                  type="number"
-                  required
-                  value={newSale.amount}
-                  onChange={(e) => setNewSale({ ...newSale, amount: e.target.value })}
-                  placeholder="e.g. 15000"
-                  className="border-slate-200"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Course / Product</label>
-                <Input
-                  type="text"
-                  value={newSale.courseName}
-                  onChange={(e) => setNewSale({ ...newSale, courseName: e.target.value })}
-                  placeholder="Course name"
-                  className="border-slate-200"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">New Admission</label>
-                <select
-                  className="w-full text-sm border border-slate-200 rounded-md p-2 bg-white focus:ring-1 focus:ring-emerald-500"
-                  value={newSale.newAdmission}
-                  onChange={(e) => setNewSale({ ...newSale, newAdmission: e.target.value })}
-                >
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex space-x-3 pt-4">
-              <Button type="submit" disabled={isAddingSale} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
-                {isAddingSale ? "Saving Sale..." : "Record Sale"}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setShowAddSale(false)} disabled={isAddingSale} className="flex-1">
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
