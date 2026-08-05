@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { toast } from "react-hot-toast";
 import { 
   User, DollarSign, Target, Award, LogOut, TrendingUp, 
   PhoneCall, CheckCircle, Calendar, Plus, RefreshCw, Layers, Users,
-  Search, Edit3, MessageSquare, Clock, Filter, Eye
+  Search, Edit3, MessageSquare, Clock, Filter, Eye, AlertTriangle, ClipboardList
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,6 +67,18 @@ interface TeamMemberData {
   assignedLeads: AssignedLead[];
 }
 
+interface MemberTask {
+  id: number;
+  title: string;
+  status: string;
+  type?: string | null;
+  priority?: string | null;
+  dueAt?: string | null;
+  completedAt?: string | null;
+  leadName?: string | null;
+  leadPhone?: string | null;
+}
+
 const STAGES = [
   "Not contacted",
   "Attempt to contact",
@@ -86,6 +98,8 @@ export default function TeamMemberPage() {
 
   const [data, setData] = useState<TeamMemberData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [memberTasks, setMemberTasks] = useState<MemberTask[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
   const [leadSearch, setLeadSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
 
@@ -130,6 +144,7 @@ export default function TeamMemberPage() {
         const result = await response.json();
         if (result.success) {
           setData(result);
+          await fetchMemberTasks(result.profile);
           return;
         }
       }
@@ -140,6 +155,31 @@ export default function TeamMemberPage() {
       toast.error("Error connecting to server");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMemberTasks = async (profile: UserProfile) => {
+    setTasksLoading(true);
+    try {
+      const ownerIds = Array.from(new Set([profile.email, profile.code].filter(Boolean)));
+      const responses = await Promise.all(
+        ownerIds.map((ownerId) =>
+          fetch(`/api/tasks/optimized?ownerId=${encodeURIComponent(ownerId)}&limit=100`)
+            .then((response) => (response.ok ? response.json() : null))
+        )
+      );
+
+      const uniqueTasks = new Map<number, MemberTask>();
+      responses.forEach((result) => {
+        if (!Array.isArray(result?.tasks)) return;
+        result.tasks.forEach((task: MemberTask) => uniqueTasks.set(task.id, task));
+      });
+      setMemberTasks(Array.from(uniqueTasks.values()));
+    } catch (error) {
+      console.error("Error fetching team member tasks:", error);
+      setMemberTasks([]);
+    } finally {
+      setTasksLoading(false);
     }
   };
 
@@ -305,6 +345,37 @@ export default function TeamMemberPage() {
     }
   };
 
+  const workSummary = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setHours(23, 59, 59, 999);
+    const activeTasks = memberTasks.filter(
+      (task) => !task.completedAt && !["DONE", "SKIPPED"].includes(task.status?.toUpperCase())
+    );
+    const followUpsToday = activeTasks.filter((task) => {
+      if (task.type?.toUpperCase() !== "FOLLOWUP" || !task.dueAt) return false;
+      const dueAt = new Date(task.dueAt);
+      return dueAt >= startOfToday && dueAt <= endOfToday;
+    });
+    const overdue = activeTasks.filter(
+      (task) => task.dueAt && new Date(task.dueAt) < startOfToday
+    );
+    const highPriority = activeTasks.filter(
+      (task) => task.priority?.toUpperCase() === "HIGH"
+    );
+    const urgentTasks = [...overdue, ...highPriority]
+      .filter((task, index, tasks) => tasks.findIndex((item) => item.id === task.id) === index)
+      .sort((a, b) => {
+        if (!a.dueAt) return 1;
+        if (!b.dueAt) return -1;
+        return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime();
+      })
+      .slice(0, 4);
+
+    return { activeTasks, followUpsToday, overdue, highPriority, urgentTasks, startOfToday };
+  }, [memberTasks]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 flex items-center justify-center">
@@ -319,6 +390,7 @@ export default function TeamMemberPage() {
   const profile = data?.profile || {
     name: clerkUser?.fullName || "Team Member",
     email: clerkUser?.emailAddresses[0]?.emailAddress || "member@company.com",
+    code: clerkUser?.emailAddresses[0]?.emailAddress || "member@company.com",
     role: "sales",
     target: 50000,
     status: "Active"
@@ -468,6 +540,102 @@ export default function TeamMemberPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Important work overview */}
+        <Card className="border border-slate-200/80 shadow-sm overflow-hidden">
+          <CardHeader className="bg-slate-50/70 border-b border-slate-200/80 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-emerald-600" />
+                  My Important Work
+                </CardTitle>
+                <p className="text-xs text-slate-500 mt-0.5">Tasks and follow-ups that need your attention</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => fetchMemberTasks(profile)} className="gap-1.5 text-xs text-slate-600">
+                <RefreshCw className={`w-3.5 h-3.5 ${tasksLoading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { label: "Open Tasks", value: workSummary.activeTasks.length, note: "Pending work", color: "blue" },
+                { label: "Follow-ups Today", value: workSummary.followUpsToday.length, note: "Due today", color: "amber" },
+                { label: "Overdue", value: workSummary.overdue.length, note: "Act immediately", color: "red" },
+                { label: "High Priority", value: workSummary.highPriority.length, note: "Important tasks", color: "violet" },
+              ].map((item) => {
+                const colors: Record<string, string> = {
+                  blue: "bg-blue-50 border-blue-200 text-blue-700",
+                  amber: "bg-amber-50 border-amber-200 text-amber-700",
+                  red: "bg-red-50 border-red-200 text-red-700",
+                  violet: "bg-violet-50 border-violet-200 text-violet-700",
+                };
+                return (
+                  <div key={item.label} className={`rounded-xl border p-4 ${colors[item.color]}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold">{item.label}</p>
+                        <p className="text-[11px] opacity-70 mt-1">{item.note}</p>
+                      </div>
+                      <span className="text-2xl font-bold leading-none">{tasksLoading ? "—" : item.value}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {!tasksLoading && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  Needs Your Attention
+                </h3>
+                {workSummary.urgentTasks.length === 0 ? (
+                  <p className="rounded-lg bg-emerald-50 px-3 py-2.5 text-xs font-medium text-emerald-700">
+                    You&apos;re all caught up. No overdue or high-priority tasks.
+                  </p>
+                ) : (
+                  <div className="grid md:grid-cols-2 gap-2">
+                    {workSummary.urgentTasks.map((task) => {
+                      const isOverdue = Boolean(task.dueAt && new Date(task.dueAt) < workSummary.startOfToday);
+                      const assignedLead = rawLeadsList.find((lead) => lead.phone === task.leadPhone);
+                      return (
+                        <div key={task.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-bold text-slate-800">{task.title}</p>
+                            <p className="truncate text-[11px] text-slate-500 mt-1">
+                              {task.leadName || task.leadPhone || task.type || "Task"}
+                              {task.dueAt ? ` · ${new Date(task.dueAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : ""}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Badge className={isOverdue ? "bg-red-100 text-red-700 border-0" : "bg-violet-100 text-violet-700 border-0"}>
+                              {isOverdue ? "Overdue" : "High"}
+                            </Badge>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={!assignedLead}
+                              onClick={() => assignedLead && handleOpenLeadModal(assignedLead)}
+                              className="h-7 gap-1 border-emerald-200 px-2 text-[11px] text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed"
+                              title={assignedLead ? "Update lead stage and follow-up" : "Lead is not in your assigned list"}
+                            >
+                              <Edit3 className="h-3 w-3" />
+                              Update Stage
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* My Assigned Leads Section */}
         <Card className="border border-slate-200/80 shadow-sm">
