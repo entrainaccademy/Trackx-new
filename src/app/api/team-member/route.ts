@@ -1,38 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/client";
-import { users, sales, leads } from "@/db/schema";
-import { eq, and, or } from "drizzle-orm";
+import { users, sales, leads, tasks } from "@/db/schema";
+import { eq, and, or, inArray } from "drizzle-orm";
 import { authenticateRequest } from "@/lib/clerkAuth";
-import { getTenantIdFromOrgSlug } from "@/lib/clerkOrganization";
 
 export async function GET(request: NextRequest) {
   try {
-    let email: string | null = null;
-
-    // 1. Check Clerk Auth
+    // 1. Authenticate Request using user session/token (do not trust query parameters)
     const authResult = await authenticateRequest(request);
-    if (authResult.success && authResult.email) {
-      email = authResult.email;
-    }
-
-    // 2. Check query params or headers for custom team member session fallback
-    const { searchParams } = new URL(request.url);
-    const queryEmail = searchParams.get("email");
-    const cookieEmail = request.cookies.get("trackx_user_email")?.value;
-    const headerEmail = request.headers.get("x-user-email");
-
-    if (!email) {
-      email = queryEmail || cookieEmail || headerEmail || null;
-    }
-
-    if (!email) {
+    if (!authResult.success || !authResult.email) {
       return NextResponse.json(
-        { success: false, error: "Team member authentication or email identifier required" },
+        { success: false, error: "Team member authentication required" },
         { status: 401 }
       );
     }
 
-    // 3. Find user profile in database
+    const email = authResult.email;
+
+    // 2. Find user profile in database
     const userResult = await db
       .select({
         id: users.id,
@@ -59,7 +44,7 @@ export async function GET(request: NextRequest) {
 
     const member = userResult[0];
 
-    // 4. Fetch sales logged by or associated with this team member
+    // 3. Fetch sales logged by or associated with this team member
     const memberSales = await db
       .select()
       .from(sales)
@@ -73,8 +58,8 @@ export async function GET(request: NextRequest) {
         )
       );
 
-    // 5. Fetch leads assigned to this team member
-    const memberLeads = await db
+    // 4. Fetch leads assigned to this team member (including follow-up fields)
+    const memberLeadsRaw = await db
       .select({
         id: leads.id,
         phone: leads.phone,
@@ -83,6 +68,9 @@ export async function GET(request: NextRequest) {
         stage: leads.stage,
         source: leads.source,
         score: leads.score,
+        needFollowup: leads.needFollowup,
+        followupDate: leads.followupDate,
+        followupNotes: leads.followupNotes,
         lastActivityAt: leads.lastActivityAt,
         createdAt: leads.createdAt,
       })
@@ -98,7 +86,161 @@ export async function GET(request: NextRequest) {
         )
       );
 
-    // 6. Calculate summary metrics
+    const assignedLeads = memberLeadsRaw.map((lead: {
+      id: number;
+      phone: string;
+      name: string | null;
+      email: string | null;
+      stage: string;
+      source: string | null;
+      score: number | null;
+      needFollowup: boolean | null;
+      followupDate: Date | null;
+      followupNotes: string | null;
+      lastActivityAt: Date | null;
+      createdAt: Date | null;
+    }) => ({
+      id: lead.id,
+      phone: lead.phone,
+      name: lead.name,
+      email: lead.email,
+      stage: lead.stage,
+      source: lead.source,
+      score: lead.score,
+      needFollowup: Boolean(lead.needFollowup),
+      followupDate: lead.followupDate ? new Date(lead.followupDate).toISOString() : null,
+      followupNotes: lead.followupNotes || null,
+      lastActivityAt: lead.lastActivityAt ? new Date(lead.lastActivityAt).toISOString() : null,
+      createdAt: lead.createdAt ? new Date(lead.createdAt).toISOString() : null,
+    }));
+
+    // 5. Fetch tasks belonging to the authenticated member and their tenant
+    const memberTasksRaw = await db
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        leadPhone: tasks.leadPhone,
+        type: tasks.type,
+        status: tasks.status,
+        priority: tasks.priority,
+        dueAt: tasks.dueAt,
+        completedAt: tasks.completedAt,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt,
+      })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.tenantId, member.tenantId),
+          or(
+            eq(tasks.ownerId, String(member.id)),
+            eq(tasks.ownerId, member.code || ""),
+            eq(tasks.ownerId, member.email)
+          )
+        )
+      );
+
+    // Build phone-to-leadName map for tasks
+    const phoneToNameMap: Record<string, string> = {};
+    for (const lead of memberLeadsRaw) {
+      if (lead.phone) {
+        phoneToNameMap[lead.phone] = lead.name || "";
+      }
+    }
+
+    const missingPhones: string[] = Array.from(
+      new Set(
+        memberTasksRaw
+          .map((t: { leadPhone: string }) => t.leadPhone)
+          .filter((phone: string | null | undefined): phone is string => Boolean(phone) && phoneToNameMap[phone!] === undefined)
+      )
+    );
+
+    if (missingPhones.length > 0) {
+      const extraLeads = await db
+        .select({
+          phone: leads.phone,
+          name: leads.name,
+        })
+        .from(leads)
+        .where(
+          and(
+            eq(leads.tenantId, member.tenantId),
+            inArray(leads.phone, missingPhones)
+          )
+        );
+
+      for (const el of extraLeads) {
+        if (el.phone) {
+          phoneToNameMap[el.phone] = el.name || "";
+        }
+      }
+    }
+
+    const formattedTasks = memberTasksRaw.map((t: {
+      id: number;
+      title: string;
+      leadPhone: string;
+      type: string | null;
+      status: string;
+      priority: string | null;
+      dueAt: Date | null;
+      completedAt: Date | null;
+    }) => ({
+      id: t.id,
+      title: t.title,
+      leadPhone: t.leadPhone,
+      leadName: phoneToNameMap[t.leadPhone] || null,
+      type: t.type || "OTHER",
+      status: t.status || "OPEN",
+      priority: t.priority || "MEDIUM",
+      dueAt: t.dueAt ? new Date(t.dueAt).toISOString() : null,
+      completedAt: t.completedAt ? new Date(t.completedAt).toISOString() : null,
+    }));
+
+    // 6. Calculate workStats
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    let openTasksCount = 0;
+    let followupsTodayCount = 0;
+    let overdueTasksCount = 0;
+    let highPriorityTasksCount = 0;
+
+    for (const t of memberTasksRaw) {
+      const isCompleted = !!t.completedAt;
+      const statusUpper = (t.status || "").toUpperCase();
+      const isOpen = !isCompleted && statusUpper !== "DONE" && statusUpper !== "SKIPPED";
+
+      if (isOpen) {
+        openTasksCount++;
+
+        if (t.dueAt) {
+          const dueDate = new Date(t.dueAt);
+          if (dueDate >= startOfToday && dueDate <= endOfToday) {
+            if ((t.type || "").toUpperCase() === "FOLLOWUP") {
+              followupsTodayCount++;
+            }
+          } else if (dueDate < startOfToday) {
+            overdueTasksCount++;
+          }
+        }
+
+        if ((t.priority || "").toUpperCase() === "HIGH") {
+          highPriorityTasksCount++;
+        }
+      }
+    }
+
+    const workStats = {
+      openTasks: openTasksCount,
+      followupsToday: followupsTodayCount,
+      overdueTasks: overdueTasksCount,
+      highPriorityTasks: highPriorityTasksCount,
+    };
+
+    // 7. Calculate summary metrics
     const totalRevenue = memberSales.reduce((sum: number, item: any) => sum + (Number(item.amount) || 0), 0);
     const target = member.target || 50000;
     const targetProgress = Math.min(Math.round((totalRevenue / Math.max(target, 1)) * 100), 100);
@@ -119,12 +261,14 @@ export async function GET(request: NextRequest) {
       stats: {
         totalRevenue,
         totalSales: memberSales.length,
-        assignedLeadsCount: memberLeads.length,
+        assignedLeadsCount: assignedLeads.length,
         target,
         targetProgress,
       },
+      workStats,
       sales: memberSales,
-      assignedLeads: memberLeads,
+      assignedLeads,
+      tasks: formattedTasks,
     });
   } catch (error: any) {
     console.error("Error in Team Member API:", error);
@@ -134,3 +278,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
